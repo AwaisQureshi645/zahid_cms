@@ -25,6 +25,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request, os; port = os.getenv('PORT', '8080'); urllib.request.urlopen(f'http://localhost:{port}/api/health')" || exit 1
 
-# Run the application - use sh -c to handle PORT env variable
-CMD ["sh", "-c", "exec gunicorn wsgi:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --threads 2 --timeout 120"]
+# Explicitly set entrypoint to override Koyeb's default
+ENTRYPOINT []
+
+# Run the application with gunicorn (Flask, not FastAPI/uvicorn)
+CMD ["sh", "-c", "gunicorn wsgi:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --threads 2 --timeout 120"]
 

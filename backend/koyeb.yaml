@@ -6,8 +6,8 @@ build:
   # Koyeb will auto-detect Python and install dependencies from requirements.txt
   
 run:
-  # Run command - Koyeb will use Procfile if available
-  # Otherwise, you can specify: gunicorn app:create_app() --bind 0.0.0.0:$PORT
+  # Run command for Flask application using gunicorn
+  command: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --threads 2 --timeout 120
 
 env:
   # Environment variables will be set in Koyeb dashboard
