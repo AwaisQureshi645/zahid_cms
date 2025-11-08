@@ -7,7 +7,7 @@ build:
   
 run:
   # Run command for Flask application using gunicorn
-  command: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --threads 2 --timeout 120
+  command: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 3 --keep-alive 5
 
 env:
   # Environment variables will be set in Koyeb dashboard

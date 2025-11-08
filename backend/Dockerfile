@@ -29,5 +29,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 ENTRYPOINT []
 
 # Run the application with gunicorn (Flask, not FastAPI/uvicorn)
-CMD ["sh", "-c", "gunicorn wsgi:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --threads 2 --timeout 120"]
+CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --timeout 120 --workers 3 --keep-alive 5"]
 

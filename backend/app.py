@@ -62,13 +62,16 @@ def create_app():
     return app
 
 
+# Create app instance for gunicorn (app:app)
+app = create_app()
+
+
 if __name__ == "__main__":
     """
     Run the Flask development server.
     This is only used for local development.
     For production, use a WSGI server like Gunicorn.
     """
-    app = create_app()
     port = int(os.getenv("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=True)
 
