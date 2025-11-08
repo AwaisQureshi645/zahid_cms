@@ -2,6 +2,19 @@
 
 This is a quick guide to deploy your invoice application to Koyeb.
 
+## 🐳 Docker Deployment (Recommended)
+
+We now support Docker deployment! See `backend/information/DOCKER_DEPLOYMENT.md` for detailed Docker instructions.
+
+**Quick Docker Deploy:**
+1. Backend: Use `backend/Dockerfile` - Set Root Directory to `backend` in Koyeb
+2. Frontend: Use `Dockerfile` - Set Root Directory to `.` in Koyeb
+3. Set build arguments for frontend (VITE_* variables)
+
+---
+
+## 📦 Traditional Deployment (Without Docker)
+
 ## 🚀 Backend Deployment (Flask API)
 
 ### Step 1: Push to GitHub
