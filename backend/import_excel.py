@@ -52,6 +52,37 @@ def get_first_user_id(supabase):
     return None
 
 
+def get_column_value(row, possible_names, default=""):
+    """
+    Get a column value from a pandas row using case-insensitive matching.
+    Handles variations in column names including case differences and extra spaces.
+    
+    Args:
+        row: pandas Series (row from DataFrame)
+        possible_names: list of possible column names (e.g., ["Category", "CATEGORY", "category"])
+        default: default value if column not found
+    
+    Returns:
+        str: Column value or default
+    """
+    # First try exact match
+    for name in possible_names:
+        if name in row.index:
+            value = row.get(name, default)
+            return str(value).strip() if pd.notna(value) else default
+    
+    # Try case-insensitive match (also handles spaces)
+    row_columns_normalized = {col.strip().lower(): col for col in row.index}
+    for name in possible_names:
+        normalized_name = name.strip().lower()
+        if normalized_name in row_columns_normalized:
+            actual_col = row_columns_normalized[normalized_name]
+            value = row.get(actual_col, default)
+            return str(value).strip() if pd.notna(value) else default
+    
+    return default
+
+
 def import_excel_to_supabase(excel_path, user_id=None):
     """
     Import Excel data to Supabase products table.
@@ -90,6 +121,13 @@ def import_excel_to_supabase(excel_path, user_id=None):
     
     print(f"Found {len(df)} rows in Excel file")
     print(f"Columns: {df.columns.tolist()}")
+    
+    # Check for category column variations (for debugging)
+    category_cols = [col for col in df.columns if col.lower() in ["category", "categories"]]
+    if category_cols:
+        print(f"Found category column(s): {category_cols}")
+    else:
+        print("Warning: No category column found (case-insensitive search)")
     
     # Get Supabase client
     try:
@@ -136,17 +174,28 @@ def import_excel_to_supabase(excel_path, user_id=None):
             row_user_id = str(row.get("user_id", user_id)).strip() if excel_has_user_id else user_id
             
             # Map columns (handle case-insensitive and variations)
+            # Use helper function for case-insensitive column matching
+            category_value = get_column_value(row, ["Category", "CATEGORY", "category", "Categories"], "")
+            item_name_value = get_column_value(row, ["Item Name", "Item_Name", "item_name", "Item name"], "")
+            item_no_value = get_column_value(row, ["Item_No", "Item No", "item_no", "ITEM_NO"], "")
+            description_value = get_column_value(row, ["Description", "description", "DESCRIPTION"], "")
+            unit_value = get_column_value(row, ["Unit", "unit", "UNIT"], "Piece")
+            quantity_value = get_column_value(row, ["Quantity", "quantity", "QUANTITY"], "0")
+            unit_price_value = get_column_value(row, ["Unit_Price", "Unit Price", "unit_price", "UNIT_PRICE"], "0")
+            discount_value = get_column_value(row, ["Discount", "discount", "DISCOUNT"], "0")
+            vat_percent_value = get_column_value(row, ["VAT_Percent", "VAT Percent", "vat_percent", "VAT_PERCENT", "VAT%"], "15")
+            
             product = {
                 "user_id": row_user_id,
-                "item_no": str(row.get("Item_No", "")).strip(),
-                "description": str(row.get("Description", "")).strip(),
-                "item_name": str(row.get("Item Name", "")).strip() or None,
-                "category": str(row.get("Category", "")).strip() or None,
-                "unit": str(row.get("Unit", "Piece")).strip() or "Piece",
-                "quantity": int(row.get("Quantity", 0) or 0),
-                "unit_price": float(row.get("Unit_Price", 0) or 0),
-                "discount": float(row.get("Discount", 0) or 0),
-                "vat_percent": float(row.get("VAT_Percent", 15) or 15)
+                "item_no": item_no_value,
+                "description": description_value,
+                "item_name": item_name_value or None,
+                "category": category_value or None,
+                "unit": unit_value or "Piece",
+                "quantity": int(quantity_value or 0),
+                "unit_price": float(unit_price_value or 0),
+                "discount": float(discount_value or 0),
+                "vat_percent": float(vat_percent_value or 15)
             }
             
             # Validate required fields
