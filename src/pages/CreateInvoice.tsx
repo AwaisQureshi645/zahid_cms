@@ -67,14 +67,18 @@ export default function CreateInvoice() {
   const { toast } = useToast();
   
   const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const ITEMS_PER_PAGE = 15;
+  const SUMMARY_ITEMS_THRESHOLD = 9;
   
   // Product selection filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [itemNoSearchQuery, setItemNoSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   
   const [customerName, setCustomerName] = useState('');
@@ -91,14 +95,27 @@ export default function CreateInvoice() {
   }, [user]);
 
   const fetchProducts = async () => {
-    if (!user) return;
+    if (!user) {
+      setLoadingProducts(false);
+      return;
+    }
     
-    const { data, error } = await supabase
-      .from('products')
-      .select('*');
+    setLoadingProducts(true);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*');
 
-    if (!error && data) {
-      setProducts(data);
+      if (!error && data) {
+        setProducts(data);
+      } else {
+        setProducts([]);
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      setProducts([]);
+    } finally {
+      setLoadingProducts(false);
     }
   };
 
@@ -122,13 +139,20 @@ export default function CreateInvoice() {
       );
     }
 
+    // Filter by item number search query
+    if (itemNoSearchQuery) {
+      filtered = filtered.filter(p => 
+        p.item_no.toLowerCase().includes(itemNoSearchQuery.toLowerCase())
+      );
+    }
+
     // Filter by category
     if (selectedCategory !== 'all') {
       filtered = filtered.filter(p => p.category === selectedCategory);
     }
 
     return filtered;
-  }, [products, searchQuery, selectedCategory]);
+  }, [products, searchQuery, itemNoSearchQuery, selectedCategory]);
 
   // Handle product selection
   const toggleProductSelection = (productId: string) => {
@@ -251,6 +275,20 @@ export default function CreateInvoice() {
     setInvoiceItems(items);
   };
 
+  const updateItemUnitPrice = (index: number, newUnitPrice: number) => {
+    const items = [...invoiceItems];
+    const item = items[index];
+    
+    item.unit_price = newUnitPrice;
+    item.total = item.unit_price * item.quantity;
+    const discountAmount = (item.total * item.discount) / 100;
+    const subtotal = item.total - discountAmount;
+    item.vat_value = (subtotal * item.vat_percent) / 100;
+    item.amount = subtotal + item.vat_value;
+    
+    setInvoiceItems(items);
+  };
+
   const removeItem = (index: number) => {
     setInvoiceItems(invoiceItems.filter((_, i) => i !== index));
   };
@@ -286,10 +324,9 @@ export default function CreateInvoice() {
     const totals = calculateTotals();
     const invoiceNo = generateInvoiceNumber();
 
-    const { error } = await supabase
-      .from('invoices')
-      .insert([{
-        user_id: user?.id,
+    // Save to Flask backend (primary storage)
+    try {
+      await apiPost('/api/invoices', {
         invoice_no: invoiceNo,
         customer_name: customerName,
         customer_phone: customerPhone,
@@ -300,33 +337,24 @@ export default function CreateInvoice() {
         subtotal: totals.subtotal,
         discount: totals.discount,
         vat_amount: totals.vatAmount,
-        total: totals.total,
+        total_amount: totals.total,
+        currency: 'USD',
         notes: notes,
         receiver_name: receiverName,
         cashier_name: cashierName,
-      }]);
-
-    if (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to save invoice',
-        variant: 'destructive',
       });
-    } else {
-      // Also send a minimal record to Flask backend for persistence/reporting
-      try {
-        await apiPost('/api/invoices', {
-          customer_name: customerName,
-          total_amount: totals.total,
-          currency: 'USD',
-          notes: notes,
-        });
-      } catch (e) {
-        // Non-blocking: notify but don't stop navigation
-        console.warn('Backend sync failed', e);
-      }
+      
       toast({ title: 'Invoice saved successfully' });
       navigate('/dashboard/invoices');
+    } catch (e: any) {
+      // If backend save fails, show error
+      const errorMessage = e.message || 'Failed to save invoice';
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+      console.error('Failed to save invoice to backend:', e);
     }
   };
 
@@ -342,9 +370,11 @@ export default function CreateInvoice() {
       return;
     }
 
-    const ITEMS_PER_PAGE = 15;
     const itemPages = Math.ceil(invoiceItems.length / ITEMS_PER_PAGE);
-    const totalPages = itemPages + 1; // +1 for summary page
+    const lastPageItemCount = itemPages > 0 ? invoiceItems.length - ITEMS_PER_PAGE * (itemPages - 1) : 0;
+    const summaryFitsOnLastItemsPage = itemPages > 0 && lastPageItemCount <= SUMMARY_ITEMS_THRESHOLD;
+    const needsSummaryPage = !summaryFitsOnLastItemsPage;
+    const totalPages = itemPages + (needsSummaryPage ? 1 : 0);
     const invoiceNo = generateInvoiceNumber();
     const totals = calculateTotals();
 
@@ -375,7 +405,7 @@ export default function CreateInvoice() {
       
       const pageDiv = document.createElement('div');
       pageDiv.className = 'print-page';
-      pageDiv.style.pageBreakAfter = page < itemPages ? 'always' : 'auto';
+      pageDiv.style.pageBreakAfter = page < itemPages || (needsSummaryPage && page === itemPages) ? 'always' : 'auto';
       pagesWrapper.appendChild(pageDiv);
 
       const root = createRoot(pageDiv);
@@ -400,41 +430,42 @@ export default function CreateInvoice() {
           currentPage={page}
           totalPages={totalPages}
           startIndex={startIndex}
-          showSummary={false}
+          showSummary={summaryFitsOnLastItemsPage && page === itemPages}
         />
       );
     }
 
-    // Generate summary page
-    const summaryPageDiv = document.createElement('div');
-    summaryPageDiv.className = 'print-page';
-    pagesWrapper.appendChild(summaryPageDiv);
+    if (needsSummaryPage) {
+      const summaryPageDiv = document.createElement('div');
+      summaryPageDiv.className = 'print-page';
+      pagesWrapper.appendChild(summaryPageDiv);
 
-    const summaryRoot = createRoot(summaryPageDiv);
-    roots.push(summaryRoot);
-    summaryRoot.render(
-      <InvoiceTemplate
-        invoiceNo={invoiceNo}
-        date={new Date().toISOString().split('T')[0]}
-        customerName={customerName}
-        customerVatId={customerVatId}
-        customerPhone={customerPhone}
-        customerAddress={customerAddress}
-        quotationPrice={quotationPrice}
-        items={[]}
-        subtotal={totals.subtotal}
-        discount={totals.discount}
-        vatAmount={totals.vatAmount}
-        total={totals.total}
-        notes={notes}
-        receiverName={receiverName}
-        cashierName={cashierName}
-        currentPage={totalPages}
-        totalPages={totalPages}
-        startIndex={invoiceItems.length}
-        showSummary={true}
-      />
-    );
+      const summaryRoot = createRoot(summaryPageDiv);
+      roots.push(summaryRoot);
+      summaryRoot.render(
+        <InvoiceTemplate
+          invoiceNo={invoiceNo}
+          date={new Date().toISOString().split('T')[0]}
+          customerName={customerName}
+          customerVatId={customerVatId}
+          customerPhone={customerPhone}
+          customerAddress={customerAddress}
+          quotationPrice={quotationPrice}
+          items={[]}
+          subtotal={totals.subtotal}
+          discount={totals.discount}
+          vatAmount={totals.vatAmount}
+          total={totals.total}
+          notes={notes}
+          receiverName={receiverName}
+          cashierName={cashierName}
+          currentPage={totalPages}
+          totalPages={totalPages}
+          startIndex={invoiceItems.length}
+          showSummary={true}
+        />
+      );
+    }
 
     // Wait for rendering
     await new Promise(resolve => setTimeout(resolve, 800));
@@ -562,9 +593,11 @@ export default function CreateInvoice() {
 
     setIsGeneratingPDF(true);
     try {
-      const ITEMS_PER_PAGE = 15;
       const itemPages = Math.ceil(invoiceItems.length / ITEMS_PER_PAGE);
-      const totalPages = itemPages + 1; // +1 for summary page
+      const lastPageItemCount = itemPages > 0 ? invoiceItems.length - ITEMS_PER_PAGE * (itemPages - 1) : 0;
+      const summaryFitsOnLastItemsPage = itemPages > 0 && lastPageItemCount <= SUMMARY_ITEMS_THRESHOLD;
+      const needsSummaryPage = !summaryFitsOnLastItemsPage;
+      const totalPages = itemPages + (needsSummaryPage ? 1 : 0);
       
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -611,7 +644,7 @@ export default function CreateInvoice() {
             currentPage={page}
             totalPages={totalPages}
             startIndex={startIndex}
-            showSummary={false}
+            showSummary={summaryFitsOnLastItemsPage && page === itemPages}
           />
         );
 
@@ -641,58 +674,60 @@ export default function CreateInvoice() {
       }
 
       // Generate summary page
-      const tempDiv = document.createElement('div');
-      tempDiv.style.position = 'absolute';
-      tempDiv.style.left = '-9999px';
-      tempDiv.style.width = '210mm';
-      tempDiv.style.backgroundColor = '#ffffff';
-      document.body.appendChild(tempDiv);
+      if (needsSummaryPage) {
+        const tempDiv = document.createElement('div');
+        tempDiv.style.position = 'absolute';
+        tempDiv.style.left = '-9999px';
+        tempDiv.style.width = '210mm';
+        tempDiv.style.backgroundColor = '#ffffff';
+        document.body.appendChild(tempDiv);
 
-      const root = createRoot(tempDiv);
-      root.render(
-        <InvoiceTemplate
-          invoiceNo={invoiceNo}
-          date={new Date().toISOString().split('T')[0]}
-          customerName={customerName}
-          customerVatId={customerVatId}
-          customerPhone={customerPhone}
-          customerAddress={customerAddress}
-          quotationPrice={quotationPrice}
-          items={[]}
-          subtotal={totals.subtotal}
-          discount={totals.discount}
-          vatAmount={totals.vatAmount}
-          total={totals.total}
-          notes={notes}
-          receiverName={receiverName}
-          cashierName={cashierName}
-          currentPage={totalPages}
-          totalPages={totalPages}
-          startIndex={invoiceItems.length}
-          showSummary={true}
-        />
-      );
+        const root = createRoot(tempDiv);
+        root.render(
+          <InvoiceTemplate
+            invoiceNo={invoiceNo}
+            date={new Date().toISOString().split('T')[0]}
+            customerName={customerName}
+            customerVatId={customerVatId}
+            customerPhone={customerPhone}
+            customerAddress={customerAddress}
+            quotationPrice={quotationPrice}
+            items={[]}
+            subtotal={totals.subtotal}
+            discount={totals.discount}
+            vatAmount={totals.vatAmount}
+            total={totals.total}
+            notes={notes}
+            receiverName={receiverName}
+            cashierName={cashierName}
+            currentPage={totalPages}
+            totalPages={totalPages}
+            startIndex={invoiceItems.length}
+            showSummary={true}
+          />
+        );
 
-      await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 300));
 
-      const canvas = await html2canvas(tempDiv, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: tempDiv.scrollWidth,
-        windowHeight: tempDiv.scrollHeight,
-      });
+        const canvas = await html2canvas(tempDiv, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: tempDiv.scrollWidth,
+          windowHeight: tempDiv.scrollHeight,
+        });
 
-      const imgData = canvas.toDataURL('image/png');
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        const imgData = canvas.toDataURL('image/png');
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-      pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-      
-      // Cleanup
-      root.unmount();
-      document.body.removeChild(tempDiv);
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+        
+        // Cleanup
+        root.unmount();
+        document.body.removeChild(tempDiv);
+      }
 
       pdf.save(`invoice-${invoiceNo}.pdf`);
 
@@ -783,6 +818,25 @@ export default function CreateInvoice() {
                     </Button>
                   )}
                 </div>
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by item number..."
+                    value={itemNoSearchQuery}
+                    onChange={(e) => setItemNoSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                  {itemNoSearchQuery && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                      onClick={() => setItemNoSearchQuery('')}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                   <SelectTrigger className="w-full md:w-[200px]">
                     <SelectValue placeholder="All Categories" />
@@ -832,15 +886,21 @@ export default function CreateInvoice() {
                         <TableHead>Unit</TableHead>
                         <TableHead>Unit Price</TableHead>
                         <TableHead>Discount %</TableHead>
-                        <TableHead>VAT %</TableHead>
+                        <TableHead>VAT 15%</TableHead>
                         <TableHead>Total Amount</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredProducts.length === 0 ? (
+                      {loadingProducts ? (
                         <TableRow>
                           <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                            No products found. {searchQuery || selectedCategory !== 'all' ? 'Try adjusting your filters.' : 'Add products to your inventory first.'}
+                            Loading products...
+                          </TableCell>
+                        </TableRow>
+                      ) : filteredProducts.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                            No products found. {searchQuery || itemNoSearchQuery || selectedCategory !== 'all' ? 'Try adjusting your filters.' : 'Add products to your inventory first.'}
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -877,7 +937,25 @@ export default function CreateInvoice() {
               {/* Invoice Items Table */}
               {invoiceItems.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="text-lg font-semibold mb-4">Invoice Items</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Invoice Items</h3>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm('Are you sure you want to clear all invoice items?')) {
+                          setInvoiceItems([]);
+                          toast({
+                            title: 'Cleared',
+                            description: 'All invoice items have been removed',
+                          });
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Clear All
+                    </Button>
+                  </div>
                   <div className="overflow-x-auto border rounded-lg">
                     <div className="max-h-[300px] overflow-y-auto">
                       <Table>
@@ -910,7 +988,15 @@ export default function CreateInvoice() {
                                   className="w-20"
                                 />
                               </TableCell>
-                              <TableCell>{item.unit_price.toFixed(2)}</TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={item.unit_price}
+                                  onChange={(e) => updateItemUnitPrice(index, parseFloat(e.target.value) || 0)}
+                                  className="w-24"
+                                />
+                              </TableCell>
                               <TableCell>{item.discount.toFixed(2)}</TableCell>
                               <TableCell>{item.total.toFixed(2)}</TableCell>
                               <TableCell>{item.vat_percent}</TableCell>
@@ -1107,10 +1193,6 @@ export default function CreateInvoice() {
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setShowPreview(false)}>
               Close
-            </Button>
-            <Button onClick={() => window.print()}>
-              <Printer className="h-4 w-4 mr-2" />
-              Print
             </Button>
           </div>
         </DialogContent>

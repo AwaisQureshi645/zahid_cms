@@ -91,12 +91,22 @@ export default function InvoiceTemplate({
   };
 
   return (
-    <div className="bg-white p-8 text-xs print:p-4 print:text-[10px]" dir="ltr" style={{ fontFamily: 'Arial, sans-serif' }}>
+    <div 
+      className="bg-white p-8 text-xs print:p-4 print:text-[10px] invoice-container" 
+      dir="ltr" 
+      style={{ 
+        fontFamily: 'Arial, sans-serif',
+        maxWidth: '210mm',
+        width: '100%',
+        margin: '0 auto'
+      }}
+    >
       <style>{`
         @media print {
           @page {
             margin: 0.5cm;
             size: A4;
+            size: 210mm 297mm;
           }
           * {
             -webkit-print-color-adjust: exact;
@@ -106,10 +116,12 @@ export default function InvoiceTemplate({
             margin: 0;
             padding: 0;
             overflow: visible !important;
+            width: 210mm;
           }
           html, body {
             height: auto !important;
             overflow: visible !important;
+            width: 210mm;
           }
           .no-print {
             display: none !important;
@@ -125,6 +137,8 @@ export default function InvoiceTemplate({
             page-break-inside: auto;
             border-collapse: collapse !important;
             border-spacing: 0 !important;
+            width: 100%;
+            table-layout: fixed;
           }
           table td, table th {
             border-width: 1px !important;
@@ -151,6 +165,14 @@ export default function InvoiceTemplate({
             display: table-footer-group;
             page-break-before: avoid;
             break-before: avoid;
+          }
+        }
+        @media screen {
+          .invoice-container {
+            max-width: 210mm;
+            width: 100%;
+            margin: 0 auto;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
           }
         }
       `}</style>
@@ -220,35 +242,35 @@ export default function InvoiceTemplate({
               <th className="border border-black p-1 text-center" style={{ width: '3%', borderWidth: '1px' }}>
                 <div>م</div>
               </th>
-              <th className="border border-black p-1 text-center" style={{ width: '8%', borderWidth: '1px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '7%', borderWidth: '1px' }}>
                 <div>رقم الصنف</div>
                 <div className="text-xs">Item No.</div>
               </th>
-              <th className="border border-black p-1 text-center" style={{ width: '32%', borderWidth: '1px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '36%', borderWidth: '1px' }}>
                 <div>الوصف</div>
                 <div className="text-xs">Description</div>
               </th>
-              <th className="border border-black p-1 text-center" style={{ width: '8%', borderWidth: '1px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '7%', borderWidth: '1px' }}>
                 <div>الوحدة</div>
                 <div className="text-xs">Unit</div>
               </th>
-              <th className="border border-black p-1 text-center" style={{ width: '8%', borderWidth: '1px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '7%', borderWidth: '1px' }}>
                 <div>الكمية</div>
                 <div className="text-xs">Qty.</div>
               </th>
-              <th className="border border-black p-1 text-center" style={{ width: '10%', borderWidth: '1px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '9%', borderWidth: '1px' }}>
                 <div>السعر</div>
                 <div className="text-xs">U. Price</div>
               </th>
-              <th className="border border-black p-1 text-center" style={{ width: '8%', borderWidth: '1px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '7%', borderWidth: '1px' }}>
                 <div>الخصم</div>
                 <div className="text-xs">Dis.</div>
               </th>
-              <th className="border border-black p-1 text-center" style={{ width: '10%', borderWidth: '1px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '9%', borderWidth: '1px' }}>
                 <div>المجموع</div>
                 <div className="text-xs">Total</div>
               </th>
-              <th className="border border-black p-1 text-center" style={{ width: '10%', borderWidth: '1px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '9%', borderWidth: '1px' }}>
                 <div>قيمة الضريبة %</div>
                 <div className="text-xs">Vat Value %</div>
               </th>
@@ -297,7 +319,7 @@ export default function InvoiceTemplate({
 
       {/* Summary Section - Only show on last page or when showSummary is true */}
       {showSummary && (
-      <div className={`border-2 ${items.length > 0 ? 'border-t-0' : ''} border-black`} style={{ pageBreakBefore: currentPage === 1 ? 'auto' : 'always' }}>
+      <div className={`border-2 ${items.length > 0 ? 'border-t-0' : ''} border-black`}>
         <div className="grid grid-cols-2">
           {/* Left side - Stamp & Signature Area */}
           <div className="border-r border-black p-4 flex flex-col items-center justify-center min-h-[200px]">

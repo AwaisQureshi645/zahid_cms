@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { z } from 'zod';
+import { Eye, EyeOff } from 'lucide-react';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -14,21 +15,41 @@ const loginSchema = z.object({
 });
 
 const signupSchema = loginSchema.extend({
-  fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100),
+  username: z.string().min(2, 'Username must be at least 2 characters').max(50),
 });
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const { signIn, signUp, user } = useAuth();
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const { signIn, signUp, user, loading } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect if already logged in
+  // Redirect if already logged in (but only if not loading)
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, loading, navigate]);
+  
+  // Show loading while checking auth state
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Don't render if user is logged in (will redirect via useEffect)
   if (user) {
-    navigate('/dashboard');
     return null;
   }
 
@@ -56,7 +77,7 @@ export default function Auth() {
     e.preventDefault();
     setErrors({});
     
-    const result = signupSchema.safeParse({ email, password, fullName });
+    const result = signupSchema.safeParse({ email, password, username });
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
       result.error.errors.forEach(err => {
@@ -66,9 +87,13 @@ export default function Auth() {
       return;
     }
 
-    const { error } = await signUp(email, password, fullName);
+    const { error } = await signUp(username, email, password);
     if (!error) {
-      navigate('/dashboard');
+      // After successful registration, redirect to login
+      setIsLogin(true);
+      setEmail('');
+      setPassword('');
+      setUsername('');
     }
   };
 
@@ -104,14 +129,25 @@ export default function Auth() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showLoginPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                   {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
                 </div>
                 <Button type="submit" className="w-full">
@@ -123,16 +159,16 @@ export default function Auth() {
             <TabsContent value="signup">
               <form onSubmit={handleSignup} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
+                  <Label htmlFor="username">Username</Label>
                   <Input
-                    id="fullName"
+                    id="username"
                     type="text"
-                    placeholder="John Doe"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="johndoe"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
                     required
                   />
-                  {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
+                  {errors.username && <p className="text-sm text-destructive">{errors.username}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-email">Email</Label>
@@ -148,14 +184,25 @@ export default function Auth() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-password">Password</Label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="signup-password"
+                      type={showSignupPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSignupPassword((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                      aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showSignupPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                   {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
                 </div>
                 <Button type="submit" className="w-full">

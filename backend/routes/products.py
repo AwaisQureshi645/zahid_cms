@@ -35,6 +35,15 @@ def list_products():
         return jsonify(resp.data or [])
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        error_msg = str(e)
+        # Check if it's an RLS (Row Level Security) error
+        if "row-level security" in error_msg.lower() or "42501" in error_msg:
+            return jsonify({
+                "error": "Permission denied. Please ensure you're using the correct service_role key.",
+                "details": error_msg
+            }), 403
+        return jsonify({"error": f"Failed to fetch products: {error_msg}"}), 500
 
 
 @products_bp.post("/api/products")

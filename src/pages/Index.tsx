@@ -9,6 +9,19 @@ const Index = () => {
   const { user, loading } = useAuth();
 
   useEffect(() => {
+    // Handle redirect from email confirmation if user landed on localhost
+    // but should be on production domain
+    const hash = window.location.hash;
+    const productionUrl = 'https://gleaming-hummingbird-6934de.netlify.app';
+    
+    if (hash && hash.includes('access_token') && productionUrl && window.location.origin.includes('localhost')) {
+      // User is on localhost but has auth token - redirect to production
+      const redirectUrl = `${productionUrl}${window.location.pathname}${hash}`;
+      console.log('[Index] Redirecting to production:', redirectUrl);
+      window.location.href = redirectUrl;
+      return;
+    }
+
     if (!loading && user) {
       navigate('/dashboard');
     }

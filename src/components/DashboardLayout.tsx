@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Package, FileText, BarChart3, Settings, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface DashboardLayoutProps {
@@ -12,7 +13,29 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ title, children }: DashboardLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
+
+  // Get user initials from username or email
+  const getUserInitials = () => {
+    if (!user) return 'U';
+    const name = user.username || user.email;
+    const parts = name.split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  // Get display name (username or email)
+  const getDisplayName = () => {
+    if (!user) return 'User';
+    // If username looks like a name (has space or is capitalized), use it
+    if (user.username && (user.username.includes(' ') || user.username[0] === user.username[0].toUpperCase())) {
+      return user.username;
+    }
+    // Otherwise, format email or username nicely
+    return user.username || user.email.split('@')[0];
+  };
 
   const menuItems = [
     { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
@@ -25,7 +48,9 @@ export default function DashboardLayout({ title, children }: DashboardLayoutProp
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/auth');
+    // Force a full page reload to ensure all state is cleared
+    // This prevents any race conditions with state updates
+    window.location.href = '/auth';
   };
 
   return (
@@ -53,6 +78,33 @@ export default function DashboardLayout({ title, children }: DashboardLayoutProp
             );
           })}
         </nav>
+        
+        {/* User Profile Section at the bottom */}
+        <div className="border-t p-4 flex-shrink-0 bg-background">
+          <div className="flex items-center gap-3 mb-3">
+            <Avatar className="h-10 w-10">
+              <AvatarFallback className="bg-gradient-to-br from-purple-500 to-blue-500 text-white font-semibold">
+                {getUserInitials()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-sm text-foreground truncate">
+                {getDisplayName()}
+              </div>
+              <div className="text-xs text-muted-foreground truncate">
+                {user?.email || ''}
+              </div>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={handleSignOut}
+            className="w-full border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600"
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            Logout
+          </Button>
+        </div>
       </aside>
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">
         <header className="sticky top-0 z-10 bg-background/60 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b flex-shrink-0">
@@ -60,10 +112,6 @@ export default function DashboardLayout({ title, children }: DashboardLayoutProp
             <div>
               <h1 className="text-xl md:text-2xl font-bold">{title || 'Dashboard'}</h1>
             </div>
-            <Button variant="outline" onClick={handleSignOut}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign Out
-            </Button>
           </div>
         </header>
         <div className="container mx-auto p-4 md:p-6 flex-1 overflow-y-auto">

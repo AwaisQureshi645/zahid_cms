@@ -18,8 +18,10 @@ if (!SUPABASE_ANON_KEY) {
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    storage: localStorage,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     persistSession: true,
     autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce', // Use PKCE flow for better security and session handling
   }
 });

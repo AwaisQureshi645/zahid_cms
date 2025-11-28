@@ -11,4 +11,11 @@ if (!supabaseAnonKey) {
   throw new Error('VITE_SUPABASE_ANON_KEY is not defined. Add it to your .env and restart the dev server.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Simple Supabase client for database operations only (no auth)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});

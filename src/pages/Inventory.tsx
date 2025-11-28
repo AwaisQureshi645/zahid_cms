@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Pencil, Trash2, Search, ChevronRight, ChevronLeft } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Trash2, Search, ChevronRight, ChevronLeft, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/dialog';
 import { z } from 'zod';
 import DashboardLayout from '@/components/DashboardLayout';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api';
 
 const productSchema = z.object({
   item_no: z.string().min(1, 'Item number is required').max(50),
@@ -78,6 +78,7 @@ export default function Inventory() {
   
   // Filter and pagination states
   const [searchQuery, setSearchQuery] = useState('');
+  const [itemNoSearchQuery, setItemNoSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
@@ -141,6 +142,14 @@ export default function Inventory() {
       });
     }
 
+    // Filter by item number search query
+    if (itemNoSearchQuery) {
+      filtered = filtered.filter(p => {
+        const itemNo = (p.item_no || '').toLowerCase();
+        return itemNo.includes(itemNoSearchQuery.toLowerCase());
+      });
+    }
+
     // Filter by category
     if (selectedCategory !== 'all') {
       filtered = filtered.filter(p => p.category === selectedCategory);
@@ -154,7 +163,7 @@ export default function Inventory() {
     });
 
     return filtered;
-  }, [products, searchQuery, selectedCategory, sortOrder]);
+  }, [products, searchQuery, itemNoSearchQuery, selectedCategory, sortOrder]);
 
   // Calculate pagination
   const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
@@ -191,7 +200,7 @@ export default function Inventory() {
   // Reset to page 1 when filters or items per page change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedCategory, itemsPerPage, sortOrder]);
+  }, [searchQuery, itemNoSearchQuery, selectedCategory, itemsPerPage, sortOrder]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,11 +218,7 @@ export default function Inventory() {
 
     if (editingProduct) {
       try {
-        await fetch(`/api/products/${editingProduct.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
+        await apiPut(`/api/products/${editingProduct.id}`, formData);
         toast({ title: 'Product updated successfully' });
         setShowDialog(false);
         fetchProducts();
@@ -238,7 +243,7 @@ export default function Inventory() {
     if (!confirm('Are you sure you want to delete this product?')) return;
 
     try {
-      await fetch(`/api/products/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await apiDelete(`/api/products/${encodeURIComponent(id)}`);
       toast({ title: 'Product deleted successfully' });
       fetchProducts();
     } catch (e) {
@@ -304,6 +309,35 @@ export default function Inventory() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9"
                 />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                    onClick={() => setSearchQuery('')}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by item number..."
+                  value={itemNoSearchQuery}
+                  onChange={(e) => setItemNoSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+                {itemNoSearchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                    onClick={() => setItemNoSearchQuery('')}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
               <div className="w-full sm:w-[200px]">
                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
@@ -363,7 +397,7 @@ export default function Inventory() {
               <p className="text-center py-8">Loading products...</p>
             ) : filteredProducts.length === 0 ? (
               <p className="text-center py-8 text-muted-foreground">
-                {searchQuery || selectedCategory !== 'all' 
+                {searchQuery || itemNoSearchQuery || selectedCategory !== 'all' 
                   ? 'No products found matching your filters.' 
                   : 'No products yet. Click "Add Product" to get started.'}
               </p>

@@ -15,8 +15,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create data directory for SQLite (if needed)
-RUN mkdir -p data
+# Create data directory for SQLite (if needed) with write permissions
+RUN mkdir -p data && chmod 777 data
 
 # Expose port (Koyeb will set PORT env variable)
 EXPOSE 8080

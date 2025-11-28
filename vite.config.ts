@@ -8,13 +8,8 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-    proxy: {
-      "/api": {
-        target: "http://localhost:5000",
-        changeOrigin: true,
-        secure: false,
-      },
-    },
+    // Proxy removed - frontend and backend are deployed separately
+    // Use VITE_API_URL environment variable to configure backend URL
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

@@ -14,6 +14,20 @@ try:
 except ImportError:
     HAS_CLIENT_OPTIONS = False
 
+# Load environment variables
+# Try loading from project root first, then backend directory
+import os as os_module
+env_path = os_module.path.join(os_module.path.dirname(os_module.path.dirname(__file__)), ".env")
+if os_module.path.exists(env_path):
+    load_dotenv(env_path)
+
+backend_env = os_module.path.join(os_module.path.dirname(__file__), ".env")
+if os_module.path.exists(backend_env):
+    load_dotenv(backend_env, override=True)
+
+# Also try loading from current directory
+load_dotenv(override=False)
+
 
 def get_supabase_client() -> Client:
     """
