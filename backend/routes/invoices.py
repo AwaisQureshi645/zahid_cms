@@ -6,10 +6,79 @@ from flask import Blueprint, request, jsonify
 from sqlalchemy.exc import SQLAlchemyError
 from database import db
 from models import Invoice
+from supabase_client import get_supabase_client
 import json
 
 # Create a Blueprint for invoice routes
 invoices_bp = Blueprint('invoices', __name__)
+
+
+def get_supabase():
+    """
+    Lazy initialization of Supabase client.
+    """
+    try:
+        return get_supabase_client()
+    except RuntimeError as e:
+        raise RuntimeError(f"Supabase configuration error: {str(e)}. Please check your .env file.")
+
+
+def update_product_quantities(items):
+    """
+    Update product quantities in inventory after invoice is created.
+    Deducts the sold quantity from each product's inventory.
+    
+    Args:
+        items: List of invoice items, each containing product_id and quantity
+    
+    Returns:
+        tuple: (success: bool, errors: list)
+    """
+    if not items or not isinstance(items, list):
+        return True, []
+    
+    errors = []
+    supabase = get_supabase()
+    
+    for item in items:
+        try:
+            product_id = item.get("product_id")
+            sold_quantity = item.get("quantity", 0)
+            
+            if not product_id:
+                errors.append(f"Item missing product_id: {item}")
+                continue
+            
+            if sold_quantity <= 0:
+                # Skip items with zero or negative quantity
+                continue
+            
+            # Get current product from Supabase
+            resp = supabase.table("products").select("id, quantity").eq("id", product_id).execute()
+            
+            if not resp.data or len(resp.data) == 0:
+                errors.append(f"Product not found: {product_id}")
+                continue
+            
+            current_product = resp.data[0]
+            current_quantity = int(current_product.get("quantity", 0))
+            
+            # Calculate new quantity (ensure it doesn't go below 0)
+            new_quantity = max(0, current_quantity - sold_quantity)
+            
+            # Update product quantity in Supabase
+            update_resp = supabase.table("products").update({
+                "quantity": new_quantity
+            }).eq("id", product_id).execute()
+            
+            if not update_resp.data:
+                errors.append(f"Failed to update product {product_id}")
+                
+        except Exception as e:
+            error_msg = f"Error updating product {item.get('product_id', 'unknown')}: {str(e)}"
+            errors.append(error_msg)
+    
+    return len(errors) == 0, errors
 
 
 @invoices_bp.post("/api/invoices")
@@ -112,6 +181,17 @@ def create_invoice():
     except SQLAlchemyError as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
+    # Update product quantities in inventory after invoice is saved
+    try:
+        success, errors = update_product_quantities(items)
+        if not success and errors:
+            # Log errors but don't fail the invoice creation
+            # The invoice is already saved, so we just log the inventory update errors
+            print(f"Warning: Some product quantities could not be updated: {errors}")
+    except Exception as e:
+        # Log error but don't fail the invoice creation
+        print(f"Warning: Error updating product quantities: {str(e)}")
 
     return jsonify(invoice.to_dict()), 201
 

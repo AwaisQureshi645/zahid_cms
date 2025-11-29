@@ -1,8 +1,8 @@
 """
-Excel to Products Table Update Script
+Excel to Purchase Products Table Update Script
 
-This script reads Excel files from the data1 folder and updates the products table
-in Supabase. It will update existing products (matched by item_no and user_id) or
+This script reads Excel files from the data1 folder and updates the purchase_products table
+in Supabase. It will update existing purchase products (matched by item_no and user_id) or
 insert new ones if they don't exist.
 
 Expected Excel columns:
@@ -98,7 +98,7 @@ def get_column_value(row, possible_names, default=""):
 
 def find_product_by_item_no(supabase, item_no, user_id):
     """
-    Find a product by item_no and user_id.
+    Find a purchase product by item_no and user_id.
     
     Args:
         supabase: Supabase client instance
@@ -106,55 +106,55 @@ def find_product_by_item_no(supabase, item_no, user_id):
         user_id: User ID to match
     
     Returns:
-        dict: Product data if found, None otherwise
+        dict: Purchase product data if found, None otherwise
     """
     try:
-        resp = supabase.table("products").select("*").eq("item_no", item_no).eq("user_id", user_id).execute()
+        resp = supabase.table("purchase_products").select("*").eq("item_no", item_no).eq("user_id", user_id).execute()
         if resp.data and len(resp.data) > 0:
             return resp.data[0]
     except Exception as e:
-        print(f"Error finding product: {e}")
+        print(f"Error finding purchase product: {e}")
     return None
 
 
 def update_or_insert_product(supabase, product_data, existing_product=None):
     """
-    Update an existing product or insert a new one.
+    Update an existing purchase product or insert a new one.
     
     Args:
         supabase: Supabase client instance
-        product_data: Dictionary with product data to update/insert
-        existing_product: Existing product data if found, None otherwise
+        product_data: Dictionary with purchase product data to update/insert
+        existing_product: Existing purchase product data if found, None otherwise
     
     Returns:
         bool: True if successful, False otherwise
     """
     try:
         if existing_product:
-            # Update existing product
+            # Update existing purchase product
             product_id = existing_product["id"]
-            resp = supabase.table("products").update(product_data).eq("id", product_id).execute()
+            resp = supabase.table("purchase_products").update(product_data).eq("id", product_id).execute()
             if resp.data:
                 return True
             else:
                 print(f"  Warning: Update returned no data for item_no: {product_data.get('item_no')}")
                 return False
         else:
-            # Insert new product
-            resp = supabase.table("products").insert(product_data).execute()
+            # Insert new purchase product
+            resp = supabase.table("purchase_products").insert(product_data).execute()
             if resp.data:
                 return True
             else:
                 print(f"  Warning: Insert returned no data for item_no: {product_data.get('item_no')}")
                 return False
     except Exception as e:
-        print(f"  Error updating/inserting product: {e}")
+        print(f"  Error updating/inserting purchase product: {e}")
         return False
 
 
 def process_excel_file(excel_path, default_user_id=None):
     """
-    Process a single Excel file and update products table.
+    Process a single Excel file and update purchase_products table.
     
     Args:
         excel_path: Path to the Excel file
@@ -262,10 +262,10 @@ def process_excel_file(excel_path, default_user_id=None):
             # Update or insert
             if update_or_insert_product(supabase, product_data, existing_product):
                 action = "Updated" if existing_product else "Inserted"
-                print(f"Row {idx + 2}: {action} product - Item_No: {item_no_value}, Description: {description_value[:50]}")
+                print(f"Row {idx + 2}: {action} purchase product - Item_No: {item_no_value}, Description: {description_value[:50]}")
                 success_count += 1
             else:
-                print(f"Row {idx + 2}: Failed to update/insert - Item_No: {item_no_value}")
+                print(f"Row {idx + 2}: Failed to update/insert purchase product - Item_No: {item_no_value}")
                 error_count += 1
                 
         except Exception as e:

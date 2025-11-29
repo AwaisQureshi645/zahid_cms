@@ -29,6 +29,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
 
 -- Specifically grant permissions on products table (if still having issues)
 GRANT ALL ON TABLE public.products TO service_role;
+GRANT ALL ON TABLE public.purchase_products TO service_role;
 GRANT ALL ON TABLE public.invoices TO service_role;
 GRANT ALL ON TABLE public.profiles TO service_role;
 GRANT ALL ON TABLE public.company_settings TO service_role;

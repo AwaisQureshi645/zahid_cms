@@ -85,7 +85,6 @@ export default function CreateInvoice() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerVatId, setCustomerVatId] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
-  const [quotationPrice, setQuotationPrice] = useState('Type E');
   const [notes, setNotes] = useState('');
   const [receiverName, setReceiverName] = useState('');
   const [cashierName, setCashierName] = useState('');
@@ -194,13 +193,37 @@ export default function CreateInvoice() {
       const product = products.find(p => p.id === productId);
       if (!product) return;
 
+      const availableQuantity = product.quantity || 0;
+
       // Check if product already exists in invoice
       const existingIndex = invoiceItems.findIndex(item => item.product_id === productId);
       if (existingIndex >= 0) {
-        // Mark for quantity update
-        itemsToUpdate.push({ index: existingIndex, quantity: invoiceItems[existingIndex].quantity + 1 });
+        // Check if increasing quantity would exceed available
+        const currentInvoiceQty = invoiceItems[existingIndex].quantity;
+        const newQuantity = currentInvoiceQty + 1;
+        
+        if (newQuantity > availableQuantity) {
+          toast({
+            title: 'Insufficient Stock',
+            description: `Only ${availableQuantity} ${product.unit}(s) available for ${product.description || product.item_no}. You can only order the available quantity.`,
+            variant: 'destructive',
+          });
+          // Limit to available quantity
+          itemsToUpdate.push({ index: existingIndex, quantity: availableQuantity });
+        } else {
+          itemsToUpdate.push({ index: existingIndex, quantity: newQuantity });
+        }
       } else {
-        // Add new item
+        // Add new item - check if quantity 1 is available
+        if (availableQuantity < 1) {
+          toast({
+            title: 'Out of Stock',
+            description: `${product.description || product.item_no} is out of stock. Available quantity: ${availableQuantity}`,
+            variant: 'destructive',
+          });
+          return;
+        }
+        
         const quantity = 1;
         const total = product.unit_price * quantity;
         const discountAmount = (total * (product.discount || 0)) / 100;
@@ -265,8 +288,37 @@ export default function CreateInvoice() {
     const items = [...invoiceItems];
     const item = items[index];
     
-    item.quantity = newQty;
-    item.total = item.unit_price * newQty;
+    // Find the product to check available quantity
+    const product = products.find(p => p.id === item.product_id);
+    if (!product) {
+      // If product not found, just ensure quantity is at least 1
+      item.quantity = Math.max(1, newQty || 1);
+      item.total = item.unit_price * item.quantity;
+      const discountAmount = (item.total * item.discount) / 100;
+      const subtotal = item.total - discountAmount;
+      item.vat_value = (subtotal * item.vat_percent) / 100;
+      item.amount = subtotal + item.vat_value;
+      setInvoiceItems(items);
+      return;
+    }
+    
+    const availableQuantity = product.quantity || 0;
+    const requestedQty = Math.max(1, newQty || 1);
+    
+    // Check if requested quantity exceeds available
+    if (requestedQty > availableQuantity) {
+      toast({
+        title: 'Insufficient Stock',
+        description: `Only ${availableQuantity} ${product.unit}(s) available for ${item.description || item.item_no}. You can only order the available quantity.`,
+        variant: 'destructive',
+      });
+      // Limit to available quantity
+      item.quantity = availableQuantity;
+    } else {
+      item.quantity = requestedQty;
+    }
+    
+    item.total = item.unit_price * item.quantity;
     const discountAmount = (item.total * item.discount) / 100;
     const subtotal = item.total - discountAmount;
     item.vat_value = (subtotal * item.vat_percent) / 100;
@@ -321,6 +373,29 @@ export default function CreateInvoice() {
       return;
     }
 
+    // Validate quantities before saving
+    const quantityErrors: string[] = [];
+    invoiceItems.forEach((item) => {
+      const product = products.find(p => p.id === item.product_id);
+      if (product) {
+        const availableQuantity = product.quantity || 0;
+        if (item.quantity > availableQuantity) {
+          quantityErrors.push(
+            `${item.description || item.item_no}: Requested ${item.quantity}, but only ${availableQuantity} available`
+          );
+        }
+      }
+    });
+
+    if (quantityErrors.length > 0) {
+      toast({
+        title: 'Insufficient Stock',
+        description: `Cannot save invoice. ${quantityErrors.join('. ')}. Please adjust quantities.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const totals = calculateTotals();
     const invoiceNo = generateInvoiceNumber();
 
@@ -332,7 +407,7 @@ export default function CreateInvoice() {
         customer_phone: customerPhone,
         customer_vat_id: customerVatId,
         customer_address: customerAddress,
-        quotation_price: quotationPrice,
+        quotation_price: null,
         items: invoiceItems,
         subtotal: totals.subtotal,
         discount: totals.discount,
@@ -418,7 +493,6 @@ export default function CreateInvoice() {
           customerVatId={customerVatId}
           customerPhone={customerPhone}
           customerAddress={customerAddress}
-          quotationPrice={quotationPrice}
           items={pageItems}
           subtotal={totals.subtotal}
           discount={totals.discount}
@@ -450,7 +524,6 @@ export default function CreateInvoice() {
           customerVatId={customerVatId}
           customerPhone={customerPhone}
           customerAddress={customerAddress}
-          quotationPrice={quotationPrice}
           items={[]}
           subtotal={totals.subtotal}
           discount={totals.discount}
@@ -632,7 +705,6 @@ export default function CreateInvoice() {
             customerVatId={customerVatId}
             customerPhone={customerPhone}
             customerAddress={customerAddress}
-            quotationPrice={quotationPrice}
             items={pageItems}
             subtotal={totals.subtotal}
             discount={totals.discount}
@@ -691,7 +763,6 @@ export default function CreateInvoice() {
             customerVatId={customerVatId}
             customerPhone={customerPhone}
             customerAddress={customerAddress}
-            quotationPrice={quotationPrice}
             items={[]}
             subtotal={totals.subtotal}
             discount={totals.discount}
@@ -983,9 +1054,13 @@ export default function CreateInvoice() {
                               <TableCell>
                                 <Input
                                   type="number"
-                                  value={item.quantity}
-                                  onChange={(e) => updateItemQuantity(index, parseFloat(e.target.value) || 1)}
-                                  className="w-20"
+                                  value={item.quantity || 1}
+                                  onChange={(e) => {
+                                    const val = parseFloat(e.target.value);
+                                    updateItemQuantity(index, isNaN(val) ? 1 : val);
+                                  }}
+                                  className="w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  min="1"
                                 />
                               </TableCell>
                               <TableCell>
@@ -994,7 +1069,7 @@ export default function CreateInvoice() {
                                   step="0.01"
                                   value={item.unit_price}
                                   onChange={(e) => updateItemUnitPrice(index, parseFloat(e.target.value) || 0)}
-                                  className="w-24"
+                                  className="w-24 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                               </TableCell>
                               <TableCell>{item.discount.toFixed(2)}</TableCell>
@@ -1088,14 +1163,6 @@ export default function CreateInvoice() {
                     placeholder="Enter VAT ID"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Quotation Price</Label>
-                  <Input
-                    value={quotationPrice}
-                    onChange={(e) => setQuotationPrice(e.target.value)}
-                    placeholder="Type E"
-                  />
-                </div>
                 <div className="col-span-2 space-y-2">
                   <Label>Address</Label>
                   <Input
@@ -1159,7 +1226,6 @@ export default function CreateInvoice() {
           customerVatId={customerVatId}
           customerPhone={customerPhone}
           customerAddress={customerAddress}
-          quotationPrice={quotationPrice}
           items={invoiceItems}
           subtotal={totals.subtotal}
           discount={totals.discount}
@@ -1180,7 +1246,6 @@ export default function CreateInvoice() {
             customerVatId={customerVatId}
             customerPhone={customerPhone}
             customerAddress={customerAddress}
-            quotationPrice={quotationPrice}
             items={invoiceItems}
             subtotal={totals.subtotal}
             discount={totals.discount}

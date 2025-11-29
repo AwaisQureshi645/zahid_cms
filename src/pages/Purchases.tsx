@@ -40,7 +40,7 @@ import { z } from 'zod';
 import DashboardLayout from '@/components/DashboardLayout';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api';
 
-const productSchema = z.object({
+const purchaseProductSchema = z.object({
   item_no: z.string().min(1, 'Item number is required').max(50),
   item_name: z.string().max(100).optional(),
   description: z.string().min(1, 'Description is required').max(500),
@@ -52,7 +52,7 @@ const productSchema = z.object({
   vat_percent: z.number().min(0).max(100).optional(),
 });
 
-interface Product {
+interface PurchaseProduct {
   id: string;
   item_no: string;
   item_name?: string;
@@ -66,14 +66,14 @@ interface Product {
   created_at?: string;
 }
 
-export default function Inventory() {
+export default function Purchases() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [purchaseProducts, setPurchaseProducts] = useState<PurchaseProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProduct, setEditingProduct] = useState<PurchaseProduct | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   
   // Filter and pagination states
@@ -97,32 +97,32 @@ export default function Inventory() {
   });
 
   useEffect(() => {
-    fetchProducts();
+    fetchPurchaseProducts();
   }, [user]);
 
-  const fetchProducts = async () => {
+  const fetchPurchaseProducts = async () => {
     if (!user) return;
     try {
-      const data = await apiGet<Product[]>('/api/products');
-      setProducts(data || []);
+      const data = await apiGet<PurchaseProduct[]>('/api/purchase-products');
+      setPurchaseProducts(data || []);
     } catch (e) {
-      toast({ title: 'Error', description: 'Failed to fetch products', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Failed to fetch purchase products', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   };
 
-  // Get unique categories from products
+  // Get unique categories from purchase products
   const categories = useMemo(() => {
     const cats = new Set<string>();
-    products.forEach(p => {
+    purchaseProducts.forEach(p => {
       if (p.category) cats.add(p.category);
     });
     return Array.from(cats).sort();
-  }, [products]);
+  }, [purchaseProducts]);
 
-  // Calculate total amount for a product
-  const calculateTotalAmount = (product: Product): number => {
+  // Calculate total amount for a purchase product
+  const calculateTotalAmount = (product: PurchaseProduct): number => {
     const subtotal = product.quantity * product.unit_price;
     const discountAmount = subtotal * (product.discount || 0) / 100;
     const afterDiscount = subtotal - discountAmount;
@@ -130,9 +130,9 @@ export default function Inventory() {
     return afterDiscount + vatAmount;
   };
 
-  // Filter and sort products based on search, category, and sort order
+  // Filter and sort purchase products based on search, category, and sort order
   const filteredProducts = useMemo(() => {
-    let filtered = products;
+    let filtered = purchaseProducts;
 
     // Filter by search query (description)
     if (searchQuery) {
@@ -163,7 +163,7 @@ export default function Inventory() {
     });
 
     return filtered;
-  }, [products, searchQuery, itemNoSearchQuery, selectedCategory, sortOrder]);
+  }, [purchaseProducts, searchQuery, itemNoSearchQuery, selectedCategory, sortOrder]);
 
   // Calculate pagination
   const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
@@ -192,7 +192,7 @@ export default function Inventory() {
 
   const visiblePages = getVisiblePages();
 
-  // Calculate total amount for all filtered products
+  // Calculate total amount for all filtered purchase products
   const totalAmount = useMemo(() => {
     return filteredProducts.reduce((sum, product) => sum + calculateTotalAmount(product), 0);
   }, [filteredProducts]);
@@ -206,7 +206,7 @@ export default function Inventory() {
     e.preventDefault();
     setErrors({});
     
-    const result = productSchema.safeParse(formData);
+    const result = purchaseProductSchema.safeParse(formData);
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
       result.error.errors.forEach(err => {
@@ -218,36 +218,36 @@ export default function Inventory() {
 
     if (editingProduct) {
       try {
-        await apiPut(`/api/products/${editingProduct.id}`, formData);
-        toast({ title: 'Product updated successfully' });
+        await apiPut(`/api/purchase-products/${editingProduct.id}`, formData);
+        toast({ title: 'Purchase product updated successfully' });
         setShowDialog(false);
-        fetchProducts();
+        fetchPurchaseProducts();
         resetForm();
       } catch (e) {
-        toast({ title: 'Error', description: 'Failed to update product', variant: 'destructive' });
+        toast({ title: 'Error', description: 'Failed to update purchase product', variant: 'destructive' });
       }
     } else {
       try {
-        await apiPost('/api/products', { ...formData, user_id: user?.id });
-        toast({ title: 'Product added successfully' });
+        await apiPost('/api/purchase-products', { ...formData, user_id: user?.id });
+        toast({ title: 'Purchase product added successfully' });
         setShowDialog(false);
-        fetchProducts();
+        fetchPurchaseProducts();
         resetForm();
       } catch (e) {
-        toast({ title: 'Error', description: 'Failed to add product', variant: 'destructive' });
+        toast({ title: 'Error', description: 'Failed to add purchase product', variant: 'destructive' });
       }
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+    if (!confirm('Are you sure you want to delete this purchase product?')) return;
 
     try {
-      await apiDelete(`/api/products/${encodeURIComponent(id)}`);
-      toast({ title: 'Product deleted successfully' });
-      fetchProducts();
+      await apiDelete(`/api/purchase-products/${encodeURIComponent(id)}`);
+      toast({ title: 'Purchase product deleted successfully' });
+      fetchPurchaseProducts();
     } catch (e) {
-      toast({ title: 'Error', description: 'Failed to delete product', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Failed to delete purchase product', variant: 'destructive' });
     }
   };
 
@@ -267,7 +267,7 @@ export default function Inventory() {
     setErrors({});
   };
 
-  const openEditDialog = (product: Product) => {
+  const openEditDialog = (product: PurchaseProduct) => {
     setEditingProduct(product);
     setFormData({
       item_no: product.item_no,
@@ -284,7 +284,7 @@ export default function Inventory() {
   };
 
   return (
-    <DashboardLayout title="Inventory Management">
+    <DashboardLayout title="Purchases Management">
       <div className="">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
@@ -293,7 +293,7 @@ export default function Inventory() {
           </div>
           <Button onClick={() => { resetForm(); setShowDialog(true); }}>
             <Plus className="h-4 w-4 mr-2" />
-            Add Product
+            Add Purchase Product
           </Button>
         </div>
 
@@ -384,22 +384,22 @@ export default function Inventory() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Products</CardTitle>
+              <CardTitle>Purchase Products</CardTitle>
               {filteredProducts.length > 0 && (
                 <div className="text-sm text-muted-foreground">
-                  Showing {startIndex + 1}-{Math.min(endIndex, filteredProducts.length)} of {filteredProducts.length} products
+                  Showing {startIndex + 1}-{Math.min(endIndex, filteredProducts.length)} of {filteredProducts.length} purchase products
                 </div>
               )}
             </div>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <p className="text-center py-8">Loading products...</p>
+              <p className="text-center py-8">Loading purchase products...</p>
             ) : filteredProducts.length === 0 ? (
               <p className="text-center py-8 text-muted-foreground">
                 {searchQuery || itemNoSearchQuery || selectedCategory !== 'all' 
-                  ? 'No products found matching your filters.' 
-                  : 'No products yet. Click "Add Product" to get started.'}
+                  ? 'No purchase products found matching your filters.' 
+                  : 'No purchase products yet. Click "Add Purchase Product" to get started.'}
               </p>
             ) : (
               <>
@@ -421,61 +421,39 @@ export default function Inventory() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {paginatedProducts.map((product) => {
-                          const isLowStock = product.quantity < 2;
-                          return (
-                            <TableRow 
-                              key={product.id}
-                              className={isLowStock ? "bg-red-300 hover:bg-red-500 transition-colors" : ""}
-                            >
-                              <TableCell className={`font-medium ${isLowStock ? "text-red-900" : ""}`}>
-                                {product.item_no}
-                              </TableCell>
-                              <TableCell className={isLowStock ? "text-red-900" : ""}>
-                                {product.description}
-                              </TableCell>
-                              <TableCell className={isLowStock ? "text-red-900" : ""}>
-                                {product.category || '-'}
-                              </TableCell>
-                              <TableCell className={isLowStock ? "text-red-900" : ""}>
-                                {product.unit}
-                              </TableCell>
-                              <TableCell className={`font-semibold ${isLowStock ? "text-red-900" : ""}`}>
-                                {product.quantity}
-                              </TableCell>
-                              <TableCell className={isLowStock ? "text-red-900" : ""}>
-                                {product.unit_price.toFixed(2)}
-                              </TableCell>
-                              <TableCell className={isLowStock ? "text-red-900" : ""}>
-                                {product.discount || 0}%
-                              </TableCell>
-                              <TableCell className={isLowStock ? "text-red-900" : ""}>
-                                {product.vat_percent || 15}%
-                              </TableCell>
-                              <TableCell className={`font-semibold ${isLowStock ? "text-red-900" : ""}`}>
-                                {calculateTotalAmount(product).toFixed(2)}
-                              </TableCell>
-                              <TableCell className={isLowStock ? "text-red-900" : ""}>
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => openEditDialog(product)}
-                                  >
-                                    <Pencil className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => handleDelete(product.id)}
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
+                        {paginatedProducts.map((product) => (
+                          <TableRow key={product.id}>
+                            <TableCell className="font-medium">{product.item_no}</TableCell>
+                            <TableCell>{product.description}</TableCell>
+                            <TableCell>{product.category || '-'}</TableCell>
+                            <TableCell>{product.unit}</TableCell>
+                            <TableCell>{product.quantity}</TableCell>
+                            <TableCell>{product.unit_price.toFixed(2)}</TableCell>
+                            <TableCell>{product.discount || 0}%</TableCell>
+                            <TableCell>{product.vat_percent || 15}%</TableCell>
+                            <TableCell className="font-semibold">
+                              {calculateTotalAmount(product).toFixed(2)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openEditDialog(product)}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => handleDelete(product.id)}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
                       </TableBody>
                     </Table>
                   </div>
@@ -580,9 +558,9 @@ export default function Inventory() {
         <Dialog open={showDialog} onOpenChange={(open) => { setShowDialog(open); if (!open) resetForm(); }}>
           <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[95vh] overflow-y-auto p-4 sm:p-6">
             <DialogHeader>
-              <DialogTitle>{editingProduct ? 'Edit Product' : 'Add New Product'}</DialogTitle>
+              <DialogTitle>{editingProduct ? 'Edit Purchase Product' : 'Add New Purchase Product'}</DialogTitle>
               <DialogDescription>
-                Fill in the product details below
+                Fill in the purchase product details below
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
@@ -681,7 +659,7 @@ export default function Inventory() {
                   Cancel
                 </Button>
                 <Button type="submit" className="w-full sm:w-auto">
-                  {editingProduct ? 'Update' : 'Add'} Product
+                  {editingProduct ? 'Update' : 'Add'} Purchase Product
                 </Button>
               </DialogFooter>
             </form>
@@ -691,3 +669,4 @@ export default function Inventory() {
     </DashboardLayout>
   );
 }
+

@@ -3,12 +3,12 @@ Main Flask application factory.
 This module creates and configures the Flask app, registers blueprints,
 and sets up database connections.
 """
-from flask import Flask
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 from database import init_db
-from routes import products, invoices, debug, auth
+from routes import products, invoices, debug, auth, purchase_products
 
 # Load environment variables at module level (before app creation)
 # Try loading from project root first, then backend directory
@@ -53,8 +53,8 @@ def create_app():
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     # Enable CORS for all API routes with explicit configuration
-    # This supports cross-origin requests from Netlify frontend to Koyeb backend
-    # Allow common development ports and production URL
+    # This supports cross-origin requests from frontend to backend
+    # Allow common development ports and production URLs
     allowed_origins = [
         "https://gleaming-hummingbird-6934de.netlify.app",
         "http://localhost:5173",
@@ -68,14 +68,30 @@ def create_app():
         "https://zahid-cms.vercel.app",
     ]
     
-    CORS(app, resources={
-        r"/api/*": {
-            "origins": allowed_origins,
-            "supports_credentials": True,
-            "allow_headers": ["Content-Type", "Authorization"],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        }
-    })
+    # Simplified and more reliable CORS configuration
+    # Enable CORS for all routes with explicit origin matching
+    CORS(app, 
+         origins=allowed_origins,
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+         allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+         expose_headers=["Content-Type", "Authorization"],
+         supports_credentials=True,
+         max_age=3600
+    )
+
+    # Handle OPTIONS preflight requests explicitly for all API routes
+    @app.before_request
+    def handle_preflight():
+        if request.method == "OPTIONS":
+            origin = request.headers.get('Origin')
+            if origin and origin in allowed_origins:
+                response = jsonify({})
+                response.headers['Access-Control-Allow-Origin'] = origin
+                response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+                response.headers['Access-Control-Allow-Credentials'] = 'true'
+                response.headers['Access-Control-Max-Age'] = '3600'
+                return response
 
     # Initialize database
     init_db(app)
@@ -85,6 +101,20 @@ def create_app():
     app.register_blueprint(invoices.invoices_bp)
     app.register_blueprint(debug.debug_bp)
     app.register_blueprint(auth.auth_bp)
+    app.register_blueprint(purchase_products.purchase_products_bp)
+
+    # Additional CORS headers as fallback (ensures headers are always set)
+    @app.after_request
+    def after_request(response):
+        origin = request.headers.get('Origin')
+        if origin and origin in allowed_origins:
+            # Always set CORS headers for allowed origins
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
+            response.headers['Access-Control-Max-Age'] = '3600'
+        return response
 
     return app
 

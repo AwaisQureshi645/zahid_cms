@@ -1,12 +1,12 @@
 """
-Product routes for managing inventory products.
-All product operations interact with Supabase database.
+Purchase product routes for managing purchase products.
+All purchase product operations interact with Supabase database.
 """
 from flask import Blueprint, request, jsonify
 from supabase_client import get_supabase_client
 
-# Create a Blueprint for product routes
-products_bp = Blueprint('products', __name__)
+# Create a Blueprint for purchase product routes
+purchase_products_bp = Blueprint('purchase_products', __name__)
 
 
 def get_supabase():
@@ -20,18 +20,18 @@ def get_supabase():
         raise RuntimeError(f"Supabase configuration error: {str(e)}. Please check your .env file.")
 
 
-@products_bp.get("/api/products")
-def list_products():
+@purchase_products_bp.get("/api/purchase-products")
+def list_purchase_products():
     """
-    Get all products from the database.
-    Returns all products shared across all users, ordered by creation date (newest first).
+    Get all purchase products from the database.
+    Returns all purchase products shared across all users, ordered by creation date (newest first).
     
     Returns:
-        JSON array of product objects
+        JSON array of purchase product objects
     """
     try:
         supabase_client = get_supabase()
-        resp = supabase_client.table("products").select("*").order("created_at", desc=True).execute()
+        resp = supabase_client.table("purchase_products").select("*").order("created_at", desc=True).execute()
         return jsonify(resp.data or [])
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
@@ -43,30 +43,30 @@ def list_products():
                 "error": "Permission denied. Please ensure you're using the correct service_role key.",
                 "details": error_msg
             }), 403
-        return jsonify({"error": f"Failed to fetch products: {error_msg}"}), 500
+        return jsonify({"error": f"Failed to fetch purchase products: {error_msg}"}), 500
 
 
-@products_bp.post("/api/products")
-def create_product():
+@purchase_products_bp.post("/api/purchase-products")
+def create_purchase_product():
     """
-    Create a new product in the database.
+    Create a new purchase product in the database.
     
     Required fields:
-        - user_id: UUID of the user creating the product
+        - user_id: UUID of the user creating the purchase product
         - item_no: Item number/identifier
-        - description: Product description
+        - description: Purchase product description
         - unit: Unit of measurement (e.g., "Piece", "Kg")
         - quantity: Initial quantity
         - unit_price: Price per unit
     
     Optional fields:
         - item_name: Name of the item
-        - category: Product category
+        - category: Purchase product category
         - discount: Discount amount
         - vat_percent: VAT percentage
     
     Returns:
-        Created product object with 201 status code
+        Created purchase product object with 201 status code
     """
     data = request.get_json(force=True) or {}
     
@@ -90,12 +90,20 @@ def create_product():
             "discount": float(data.get("discount", 0) or 0),
             "vat_percent": float(data.get("vat_percent", 0) or 0),
         }
-        resp = supabase_client.table("products").insert(record).execute()
+        resp = supabase_client.table("purchase_products").insert(record).execute()
         
         if resp.data:
             return jsonify(resp.data[0]), 201
         # If no data returned, check if it's an error response
         if hasattr(resp, 'error') and resp.error:
+            error_details = str(resp.error)
+            # Check if it's an RLS error in the response
+            if "row-level security" in error_details.lower() or "42501" in error_details or "permission denied" in error_details.lower():
+                return jsonify({
+                    "error": "Permission denied. Please ensure the purchase_products table exists and has proper permissions.",
+                    "details": error_details,
+                    "solution": "Run the SQL script: backend/display_file/COMPLETE_PURCHASE_PRODUCTS_SETUP.sql"
+                }), 403
             return jsonify({"error": str(resp.error)}), 500
         return jsonify({"error": f"Insert failed: {str(resp)}"}), 500
         
@@ -106,31 +114,33 @@ def create_product():
         # Check if it's an RLS (Row Level Security) error
         if "row-level security" in error_msg.lower() or "42501" in error_msg or "permission denied" in error_msg.lower():
             return jsonify({
-                "error": "Permission denied. Please ensure you're using the correct service_role key and that the user_id exists in auth.users table.",
-                "details": error_msg
+                "error": "Permission denied. Please ensure the purchase_products table exists and has proper permissions.",
+                "details": error_msg,
+                "solution": "Run the SQL script: backend/display_file/COMPLETE_PURCHASE_PRODUCTS_SETUP.sql"
             }), 403
         # Return detailed error for debugging
         import traceback
         return jsonify({
-            "error": f"Failed to create product: {error_msg}",
-            "details": traceback.format_exc() if hasattr(traceback, 'format_exc') else str(e)
+            "error": f"Failed to create purchase product: {error_msg}",
+            "details": traceback.format_exc() if hasattr(traceback, 'format_exc') else str(e),
+            "solution": "Check the error details above and ensure the purchase_products table exists"
         }), 500
 
 
-@products_bp.put("/api/products/<product_id>")
-def update_product(product_id: str):
+@purchase_products_bp.put("/api/purchase-products/<product_id>")
+def update_purchase_product(product_id: str):
     """
-    Update an existing product by ID.
+    Update an existing purchase product by ID.
     
     Args:
-        product_id: UUID of the product to update
+        product_id: UUID of the purchase product to update
     
     Allowed fields to update:
         - item_no, item_name, description, category
         - unit, quantity, unit_price, discount, vat_percent
     
     Returns:
-        Updated product object
+        Updated purchase product object
     """
     data = request.get_json(force=True) or {}
     
@@ -152,7 +162,7 @@ def update_product(product_id: str):
     
     try:
         supabase_client = get_supabase()
-        resp = supabase_client.table("products").update(update).eq("id", product_id).execute()
+        resp = supabase_client.table("purchase_products").update(update).eq("id", product_id).execute()
         
         if resp.data:
             return jsonify(resp.data[0])
@@ -167,23 +177,23 @@ def update_product(product_id: str):
                 "error": "Permission denied. Please ensure you're using the correct service_role key.",
                 "details": error_msg
             }), 403
-        return jsonify({"error": f"Failed to update product: {error_msg}"}), 500
+        return jsonify({"error": f"Failed to update purchase product: {error_msg}"}), 500
 
 
-@products_bp.delete("/api/products/<product_id>")
-def delete_product(product_id: str):
+@purchase_products_bp.delete("/api/purchase-products/<product_id>")
+def delete_purchase_product(product_id: str):
     """
-    Delete a product by ID.
+    Delete a purchase product by ID.
     
     Args:
-        product_id: UUID of the product to delete
+        product_id: UUID of the purchase product to delete
     
     Returns:
         Empty response with 204 status code on success
     """
     try:
         supabase_client = get_supabase()
-        resp = supabase_client.table("products").delete().eq("id", product_id).execute()
+        resp = supabase_client.table("purchase_products").delete().eq("id", product_id).execute()
         
         return ("", 204) if resp.data is not None else (jsonify({"error": "Delete failed"}), 500)
         
@@ -196,5 +206,5 @@ def delete_product(product_id: str):
                 "error": "Permission denied. Please ensure you're using the correct service_role key.",
                 "details": error_msg
             }), 403
-        return jsonify({"error": f"Failed to delete product: {error_msg}"}), 500
+        return jsonify({"error": f"Failed to delete purchase product: {error_msg}"}), 500
 

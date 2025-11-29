@@ -208,7 +208,6 @@ export default function Invoices() {
           customerVatId={invoice.customer_vat_id}
           customerPhone={invoice.customer_phone}
           customerAddress={invoice.customer_address}
-          quotationPrice={invoice.quotation_price}
           items={pageItems}
           subtotal={invoice.subtotal}
           discount={invoice.discount}
@@ -240,7 +239,6 @@ export default function Invoices() {
           customerVatId={invoice.customer_vat_id}
           customerPhone={invoice.customer_phone}
           customerAddress={invoice.customer_address}
-          quotationPrice={invoice.quotation_price}
           items={[]}
           subtotal={invoice.subtotal}
           discount={invoice.discount}
@@ -419,7 +417,6 @@ export default function Invoices() {
             customerVatId={invoice.customer_vat_id}
             customerPhone={invoice.customer_phone}
             customerAddress={invoice.customer_address}
-            quotationPrice={invoice.quotation_price}
             items={pageItems}
             subtotal={invoice.subtotal}
             discount={invoice.discount}
@@ -478,7 +475,6 @@ export default function Invoices() {
             customerVatId={invoice.customer_vat_id}
             customerPhone={invoice.customer_phone}
             customerAddress={invoice.customer_address}
-            quotationPrice={invoice.quotation_price}
             items={[]}
             subtotal={invoice.subtotal}
             discount={invoice.discount}
@@ -784,7 +780,6 @@ export default function Invoices() {
                   customerVatId={selectedInvoice.customer_vat_id}
                   customerPhone={selectedInvoice.customer_phone}
                   customerAddress={selectedInvoice.customer_address}
-                  quotationPrice={selectedInvoice.quotation_price}
                   items={selectedInvoice.items}
                   subtotal={selectedInvoice.subtotal}
                   discount={selectedInvoice.discount}

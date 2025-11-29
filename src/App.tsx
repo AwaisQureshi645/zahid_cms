@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Inventory from "./pages/Inventory";
+import Purchases from "./pages/Purchases";
 import CreateInvoice from "./pages/CreateInvoice";
 import Invoices from "./pages/Invoices";
 import Reports from "./pages/Reports";
@@ -40,6 +41,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Inventory />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/dashboard/purchases" 
+              element={
+                <ProtectedRoute>
+                  <Purchases />
                 </ProtectedRoute>
               } 
             />

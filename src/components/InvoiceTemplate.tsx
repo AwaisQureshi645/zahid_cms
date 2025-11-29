@@ -22,7 +22,6 @@ interface InvoiceTemplateProps {
   customerVatId?: string;
   customerPhone?: string;
   customerAddress?: string;
-  quotationPrice?: string;
   items: InvoiceItem[];
   subtotal: number;
   discount: number;
@@ -45,7 +44,6 @@ export default function InvoiceTemplate({
   customerVatId,
   customerPhone,
   customerAddress,
-  quotationPrice,
   items,
   subtotal,
   discount,
@@ -206,14 +204,11 @@ export default function InvoiceTemplate({
         <div>
           <span className="font-bold">Invoice No:</span> {invoiceNo} | <span dir="rtl">رقم الفاتورة:</span>
         </div>
-        <div className="text-right">
-          <span className="font-bold">Quotation Price:</span> {quotationPrice || 'Type E'} | <span dir="rtl">السعر:</span> E نوع
-        </div>
         <div>
           <span className="font-bold">Date:</span> {formatDate(date)} | <span dir="rtl">التاريخ:</span>
         </div>
-        <div className="text-right">
-          <span className="font-bold">Date:</span> {formatDate(date)} | <span dir="rtl">التاريخ:</span><span className="font-bold">Customer:</span> {customerName || ''} <span className="font-bold ml-4">VAT ID:</span> {customerVatId || ''}
+        <div className="col-span-2 text-right">
+          <span className="font-bold">Customer:</span> {customerName || ''} <span className="font-bold ml-4">VAT ID:</span> {customerVatId || ''}
         </div>
         <div className="col-span-2 flex justify-between">
           <div>

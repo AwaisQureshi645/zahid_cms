@@ -93,3 +93,55 @@ def debug_test_insert():
             "solution": "Run the SQL fix in data/fix_permissions.sql or see information/HOW_TO_FIX_RLS_ERROR.md"
         }), 500
 
+
+@debug_bp.get("/api/debug/test-purchase-products-insert")
+def debug_test_purchase_products_insert():
+    """
+    Test endpoint to verify service_role permissions for purchase_products table.
+    Attempts to insert a test record to check if RLS (Row Level Security) is properly configured.
+    
+    WARNING: Remove this endpoint in production or secure it properly.
+    
+    Returns:
+        JSON object with test results
+    """
+    try:
+        supabase_client = get_supabase_client()
+        
+        # First check if table exists
+        try:
+            check_resp = supabase_client.table("purchase_products").select("id").limit(1).execute()
+        except Exception as table_error:
+            return jsonify({
+                "status": "error",
+                "message": "Table does not exist or is not accessible",
+                "error": str(table_error),
+                "solution": "Run the SQL script: backend/display_file/COMPLETE_PURCHASE_PRODUCTS_SETUP.sql"
+            }), 500
+        
+        # Try to insert a test record to check permissions
+        test_record = {
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "item_no": "TEST-PURCHASE-001",
+            "description": "Test Purchase Product",
+            "unit": "Piece",
+            "quantity": 1,
+            "unit_price": 1.00,
+        }
+        resp = supabase_client.table("purchase_products").insert(test_record).execute()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Service role has proper permissions for purchase_products!",
+            "data": resp.data[0] if resp.data else None
+        })
+    except Exception as e:
+        error_msg = str(e)
+        is_rls_error = "row-level security" in error_msg.lower() or "42501" in error_msg or "permission denied" in error_msg.lower()
+        return jsonify({
+            "status": "error",
+            "message": "Permission test failed for purchase_products",
+            "error": error_msg,
+            "is_rls_error": is_rls_error,
+            "solution": "Run the SQL script: backend/display_file/COMPLETE_PURCHASE_PRODUCTS_SETUP.sql in Supabase SQL Editor"
+        }), 500
