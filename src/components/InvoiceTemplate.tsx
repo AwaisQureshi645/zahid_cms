@@ -181,8 +181,8 @@ export default function InvoiceTemplate({
           <div className="text-right" dir="rtl">
             <div className="font-bold text-sm mb-1">مؤسسة وثبة العز لقطع غيار التكييف والتبريد</div>
             <div className="text-xs">KINGDOM OF SAUDI ARABIA RIYADH</div>
-            <div className="text-xs">Phone: 0559882948</div>
-            <div className="text-xs">VAT ID: 311278399900003</div>
+            <div className="text-xs">Phone:05555979802</div>
+            <div className="text-xs">VAT ID:314265267200003</div>
           </div>
           <div className="w-20 h-20 flex items-center justify-center">
             {logoError ? (
@@ -393,9 +393,9 @@ export default function InvoiceTemplate({
           </div>
         </div>
 
-        <div className="border-t border-black p-2 text-center text-xs">
+        {/* <div className="border-t border-black p-2 text-center text-xs">
           <span dir="rtl">من هنا تصبح فاتورة بان المبلغ دائن عليها نما يقتضي علية السداد فور استلام والا الحق كالا بالرجوع الى منبوذه</span>
-        </div>
+        </div> */}
       </div>
       )}
     </div>
