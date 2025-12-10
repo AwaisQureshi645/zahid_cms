@@ -53,8 +53,104 @@ interface Invoice {
   created_at: string;
 }
 
-const ITEMS_PER_PAGE = 15;
+const TARGET_ITEMS_PER_PAGE = 12;
+const MIN_ITEMS_PER_PAGE = 8; // Minimum items per page
+const MAX_ITEMS_PER_PAGE = 12; // Maximum items per page
 const SUMMARY_ITEMS_THRESHOLD = 9;
+const ITEMS_PER_PAGE = 10; // Number of invoices to show per page in the list
+
+/**
+ * Calculate how many items can fit on a page based on their description lengths
+ * Longer descriptions = fewer items per page
+ */
+const calculateItemsForPage = (items: any[], startIndex: number, maxItems: number): number => {
+  let totalLength = 0;
+  let itemCount = 0;
+  
+  for (let i = startIndex; i < items.length && itemCount < maxItems; i++) {
+    const item = items[i];
+    const descLength = (item.description || item.item_name || '').length;
+    
+    // Estimate: each character adds to row height
+    // Very long descriptions (>80 chars) take more space
+    const estimatedHeight = descLength > 80 ? 2 : descLength > 50 ? 1.5 : 1;
+    totalLength += estimatedHeight;
+    
+    // If average length per item is getting too high, stop adding items
+    const avgLength = totalLength / (itemCount + 1);
+    if (avgLength > 60 && itemCount >= MIN_ITEMS_PER_PAGE) {
+      break;
+    }
+    
+    itemCount++;
+  }
+  
+  return Math.max(MIN_ITEMS_PER_PAGE, Math.min(itemCount, MAX_ITEMS_PER_PAGE));
+};
+
+/**
+ * Simple dynamic pagination: adjusts items per page based on content length
+ * First page: 12 items (if content allows)
+ * Subsequent pages: adjust based on actual description lengths
+ * Ensures minimum 8 items per page (unless it's the last page with fewer items)
+ */
+const calculateSmartPagination = (items: any[]): Array<{ startIndex: number; endIndex: number; items: any[] }> => {
+  if (items.length === 0) return [];
+  
+  const pages: Array<{ startIndex: number; endIndex: number; items: any[] }> = [];
+  let currentIndex = 0;
+  
+  while (currentIndex < items.length) {
+    const remainingItems = items.length - currentIndex;
+    
+    // Determine how many items can fit on this page
+    let itemsForThisPage: number;
+    
+    if (pages.length === 0) {
+      // First page: try to fit target amount, but adjust if content is long
+      itemsForThisPage = calculateItemsForPage(items, currentIndex, TARGET_ITEMS_PER_PAGE);
+    } else {
+      // Subsequent pages: calculate based on actual content length
+      itemsForThisPage = calculateItemsForPage(items, currentIndex, TARGET_ITEMS_PER_PAGE);
+    }
+    
+    // Don't exceed remaining items
+    itemsForThisPage = Math.min(itemsForThisPage, remainingItems);
+    
+    // If this is the last page and has very few items, try to merge with previous page
+    if (itemsForThisPage < MIN_ITEMS_PER_PAGE && pages.length > 0 && remainingItems === itemsForThisPage) {
+      const lastPage = pages[pages.length - 1];
+      const combinedCount = lastPage.items.length + itemsForThisPage;
+      
+      // If we can fit all items on previous page, merge them
+      if (combinedCount <= MAX_ITEMS_PER_PAGE + 2) { // Allow slight overflow for last page
+        lastPage.items.push(...items.slice(currentIndex));
+        lastPage.endIndex = items.length;
+        break;
+      }
+    }
+    
+    // Ensure minimum items (except for very last page if total items are few)
+    if (itemsForThisPage < MIN_ITEMS_PER_PAGE && currentIndex + itemsForThisPage < items.length) {
+      // Try to take more items if possible
+      const canTakeMore = Math.min(MAX_ITEMS_PER_PAGE, remainingItems);
+      if (canTakeMore >= MIN_ITEMS_PER_PAGE) {
+        itemsForThisPage = canTakeMore;
+      }
+    }
+    
+    const pageItems = items.slice(currentIndex, currentIndex + itemsForThisPage);
+    pages.push({
+      startIndex: currentIndex,
+      endIndex: currentIndex + itemsForThisPage,
+      items: pageItems,
+    });
+    
+    currentIndex += itemsForThisPage;
+  }
+  
+  return pages;
+};
 
 export default function Invoices() {
   const navigate = useNavigate();
@@ -159,8 +255,10 @@ export default function Invoices() {
 
   const handlePrintInvoice = async (invoice: Invoice) => {
     const items = invoice.items || [];
-    const itemPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-    const lastPageItemCount = itemPages > 0 ? items.length - ITEMS_PER_PAGE * (itemPages - 1) : 0;
+    // Use smart pagination
+    const paginatedPages = calculateSmartPagination(items);
+    const itemPages = paginatedPages.length;
+    const lastPageItemCount = paginatedPages.length > 0 ? paginatedPages[paginatedPages.length - 1].items.length : 0;
     const summaryFitsOnLastItemsPage = itemPages > 0 && lastPageItemCount <= SUMMARY_ITEMS_THRESHOLD;
     const needsSummaryPage = !summaryFitsOnLastItemsPage;
     const totalPages = itemPages + (needsSummaryPage ? 1 : 0);
@@ -188,10 +286,10 @@ export default function Invoices() {
 
     const roots: ReturnType<typeof createRoot>[] = [];
 
-    // Generate pages for items
-    for (let page = 1; page <= itemPages; page++) {
-      const startIndex = (page - 1) * ITEMS_PER_PAGE;
-      const pageItems = items.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+    // Generate pages for items using smart pagination
+    paginatedPages.forEach((pageConfig, index) => {
+      const page = index + 1;
+      const { startIndex, items: pageItems } = pageConfig;
       
       const pageDiv = document.createElement('div');
       pageDiv.className = 'print-page';
@@ -222,7 +320,7 @@ export default function Invoices() {
           showSummary={summaryFitsOnLastItemsPage && page === itemPages}
         />
       );
-    }
+    });
 
     if (needsSummaryPage) {
       const summaryPageDiv = document.createElement('div');
@@ -375,8 +473,10 @@ export default function Invoices() {
     
     try {
       const items = invoice.items || [];
-      const itemPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-      const lastPageItemCount = itemPages > 0 ? items.length - ITEMS_PER_PAGE * (itemPages - 1) : 0;
+      // Use smart pagination
+      const paginatedPages = calculateSmartPagination(items);
+      const itemPages = paginatedPages.length;
+      const lastPageItemCount = paginatedPages.length > 0 ? paginatedPages[paginatedPages.length - 1].items.length : 0;
       const summaryFitsOnLastItemsPage = itemPages > 0 && lastPageItemCount <= SUMMARY_ITEMS_THRESHOLD;
       const needsSummaryPage = !summaryFitsOnLastItemsPage;
       const totalPages = itemPages + (needsSummaryPage ? 1 : 0);
@@ -394,10 +494,12 @@ export default function Invoices() {
         setDownloadMessage('Generating summary...');
       }
 
-      for (let page = 1; page <= itemPages; page++) {
+      // Generate pages for items using smart pagination
+      for (let index = 0; index < paginatedPages.length; index++) {
+        const pageConfig = paginatedPages[index];
+        const page = index + 1;
         setDownloadMessage(`Generating page ${page} of ${needsSummaryPage ? totalPages - 1 : totalPages}...`);
-        const startIndex = (page - 1) * ITEMS_PER_PAGE;
-        const pageItems = items.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+        const { startIndex, items: pageItems } = pageConfig;
         
         // Create a temporary container for this page
         const tempDiv = document.createElement('div');

@@ -29,7 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import InvoiceTemplate from '@/components/InvoiceTemplate';
 import DashboardLayout from '@/components/DashboardLayout';
-import { apiPost } from '@/lib/api';
+import { apiPost, apiGet } from '@/lib/api';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
@@ -61,6 +61,21 @@ interface InvoiceItem {
   amount: number;
 }
 
+interface CustomerData {
+  name: string;
+  phone: string;
+  vat_id: string;
+  address: string;
+}
+
+interface Invoice {
+  id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_vat_id: string;
+  customer_address: string;
+}
+
 export default function CreateInvoice() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -73,8 +88,103 @@ export default function CreateInvoice() {
   const [showPreview, setShowPreview] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-  const ITEMS_PER_PAGE = 15;
+  const TARGET_ITEMS_PER_PAGE = 12;
+  const MIN_ITEMS_PER_PAGE = 8; // Minimum items per page
+  const MAX_ITEMS_PER_PAGE = 12; // Maximum items per page
   const SUMMARY_ITEMS_THRESHOLD = 9;
+  
+  /**
+   * Calculate how many items can fit on a page based on their description lengths
+   * Longer descriptions = fewer items per page
+   */
+  const calculateItemsForPage = (items: InvoiceItem[], startIndex: number, maxItems: number): number => {
+    let totalLength = 0;
+    let itemCount = 0;
+    
+    for (let i = startIndex; i < items.length && itemCount < maxItems; i++) {
+      const item = items[i];
+      const descLength = (item.description || item.item_name || '').length;
+      
+      // Estimate: each character adds to row height
+      // Very long descriptions (>80 chars) take more space
+      const estimatedHeight = descLength > 80 ? 2 : descLength > 50 ? 1.5 : 1;
+      totalLength += estimatedHeight;
+      
+      // If average length per item is getting too high, stop adding items
+      const avgLength = totalLength / (itemCount + 1);
+      if (avgLength > 60 && itemCount >= MIN_ITEMS_PER_PAGE) {
+        break;
+      }
+      
+      itemCount++;
+    }
+    
+    return Math.max(MIN_ITEMS_PER_PAGE, Math.min(itemCount, MAX_ITEMS_PER_PAGE));
+  };
+  
+  /**
+   * Simple dynamic pagination: adjusts items per page based on content length
+   * First page: 12 items (if content allows)
+   * Subsequent pages: adjust based on actual description lengths
+   * Ensures minimum 8 items per page (unless it's the last page with fewer items)
+   */
+  const calculateSmartPagination = (items: InvoiceItem[]): Array<{ startIndex: number; endIndex: number; items: InvoiceItem[] }> => {
+    if (items.length === 0) return [];
+    
+    const pages: Array<{ startIndex: number; endIndex: number; items: InvoiceItem[] }> = [];
+    let currentIndex = 0;
+    
+    while (currentIndex < items.length) {
+      const remainingItems = items.length - currentIndex;
+      
+      // Determine how many items can fit on this page
+      let itemsForThisPage: number;
+      
+      if (pages.length === 0) {
+        // First page: try to fit target amount, but adjust if content is long
+        itemsForThisPage = calculateItemsForPage(items, currentIndex, TARGET_ITEMS_PER_PAGE);
+      } else {
+        // Subsequent pages: calculate based on actual content length
+        itemsForThisPage = calculateItemsForPage(items, currentIndex, TARGET_ITEMS_PER_PAGE);
+      }
+      
+      // Don't exceed remaining items
+      itemsForThisPage = Math.min(itemsForThisPage, remainingItems);
+      
+      // If this is the last page and has very few items, try to merge with previous page
+      if (itemsForThisPage < MIN_ITEMS_PER_PAGE && pages.length > 0 && remainingItems === itemsForThisPage) {
+        const lastPage = pages[pages.length - 1];
+        const combinedCount = lastPage.items.length + itemsForThisPage;
+        
+        // If we can fit all items on previous page, merge them
+        if (combinedCount <= MAX_ITEMS_PER_PAGE + 2) { // Allow slight overflow for last page
+          lastPage.items.push(...items.slice(currentIndex));
+          lastPage.endIndex = items.length;
+          break;
+        }
+      }
+      
+      // Ensure minimum items (except for very last page if total items are few)
+      if (itemsForThisPage < MIN_ITEMS_PER_PAGE && currentIndex + itemsForThisPage < items.length) {
+        // Try to take more items if possible
+        const canTakeMore = Math.min(MAX_ITEMS_PER_PAGE, remainingItems);
+        if (canTakeMore >= MIN_ITEMS_PER_PAGE) {
+          itemsForThisPage = canTakeMore;
+        }
+      }
+      
+      const pageItems = items.slice(currentIndex, currentIndex + itemsForThisPage);
+      pages.push({
+        startIndex: currentIndex,
+        endIndex: currentIndex + itemsForThisPage,
+        items: pageItems,
+      });
+      
+      currentIndex += itemsForThisPage;
+    }
+    
+    return pages;
+  };
   
   // Product selection filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,10 +198,168 @@ export default function CreateInvoice() {
   const [notes, setNotes] = useState('');
   const [receiverName, setReceiverName] = useState('');
   const [cashierName, setCashierName] = useState('');
+  const [isQuotation, setIsQuotation] = useState(false);
+  const [customerCache, setCustomerCache] = useState<Map<string, CustomerData>>(new Map());
+  const [isLoadingCustomer, setIsLoadingCustomer] = useState(false);
+  const customerSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const customerCacheRef = useRef<Map<string, CustomerData>>(new Map());
 
   useEffect(() => {
     fetchProducts();
+    loadCustomerCache();
   }, [user]);
+
+  // Load customer cache from localStorage and fetch from API
+  const loadCustomerCache = async () => {
+    try {
+      // Load from localStorage first
+      const cachedData = localStorage.getItem('customer_cache');
+      if (cachedData) {
+        const parsed = JSON.parse(cachedData);
+        const cacheMap = new Map<string, CustomerData>();
+        Object.entries(parsed).forEach(([key, value]) => {
+          cacheMap.set(key.toLowerCase(), value as CustomerData);
+        });
+        setCustomerCache(cacheMap);
+        customerCacheRef.current = cacheMap;
+      }
+
+      // Fetch invoices to build/update cache
+      if (user) {
+        await fetchAndCacheCustomers();
+      }
+    } catch (error) {
+      console.error('Error loading customer cache:', error);
+    }
+  };
+
+  // Fetch invoices and build customer cache
+  const fetchAndCacheCustomers = async (): Promise<Map<string, CustomerData>> => {
+    try {
+      const invoices = await apiGet<Invoice[]>('/api/invoices');
+      const newCache = new Map<string, CustomerData>();
+
+      invoices.forEach((invoice) => {
+        if (invoice.customer_name) {
+          const nameKey = invoice.customer_name.toLowerCase().trim();
+          // Only update if we have more complete data or it's a new customer
+          if (!newCache.has(nameKey) || 
+              (invoice.customer_phone || invoice.customer_vat_id || invoice.customer_address)) {
+            newCache.set(nameKey, {
+              name: invoice.customer_name,
+              phone: invoice.customer_phone || '',
+              vat_id: invoice.customer_vat_id || '',
+              address: invoice.customer_address || '',
+            });
+          }
+        }
+      });
+
+      // Merge with existing cache (use ref for current value)
+      const prevCache = customerCacheRef.current;
+      const mergedCache = new Map(prevCache);
+      newCache.forEach((value, key) => {
+        // Prefer data with more complete information
+        const existing = mergedCache.get(key);
+        if (!existing || 
+            (value.phone && !existing.phone) ||
+            (value.vat_id && !existing.vat_id) ||
+            (value.address && !existing.address)) {
+          mergedCache.set(key, value);
+        }
+      });
+
+      // Update state and ref
+      setCustomerCache(mergedCache);
+      customerCacheRef.current = mergedCache;
+
+      // Save to localStorage
+      const cacheObject: Record<string, CustomerData> = {};
+      mergedCache.forEach((value, key) => {
+        cacheObject[key] = value;
+      });
+      localStorage.setItem('customer_cache', JSON.stringify(cacheObject));
+
+      return mergedCache;
+    } catch (error) {
+      console.error('Error fetching customers:', error);
+      return customerCacheRef.current;
+    }
+  };
+
+  // Search for customer and auto-fill fields
+  const searchCustomer = async (name: string) => {
+    if (!name || name.trim().length < 2) {
+      return;
+    }
+
+    const nameKey = name.toLowerCase().trim();
+    
+    // Check current cache first (use ref for latest value)
+    const currentCache = customerCacheRef.current;
+    const cached = currentCache.get(nameKey);
+
+    if (cached) {
+      // Auto-fill from cache
+      setCustomerPhone(cached.phone);
+      setCustomerVatId(cached.vat_id);
+      setCustomerAddress(cached.address);
+      return;
+    }
+
+    // If not in cache, try to find similar names (fuzzy match)
+    for (const [key, data] of currentCache.entries()) {
+      if (key.includes(nameKey) || nameKey.includes(key)) {
+        setCustomerPhone(data.phone);
+        setCustomerVatId(data.vat_id);
+        setCustomerAddress(data.address);
+        return;
+      }
+    }
+
+    // If still not found, fetch from API (might be a new invoice)
+    setIsLoadingCustomer(true);
+    try {
+      const updatedCache = await fetchAndCacheCustomers();
+      const found = updatedCache.get(nameKey);
+      if (found) {
+        setCustomerPhone(found.phone);
+        setCustomerVatId(found.vat_id);
+        setCustomerAddress(found.address);
+      }
+    } catch (error) {
+      console.error('Error searching customer:', error);
+    } finally {
+      setIsLoadingCustomer(false);
+    }
+  };
+
+  // Handle customer name change with debouncing
+  const handleCustomerNameChange = (value: string) => {
+    setCustomerName(value);
+
+    // Clear previous timeout
+    if (customerSearchTimeoutRef.current) {
+      clearTimeout(customerSearchTimeoutRef.current);
+    }
+
+    // Only search if name is long enough and fields are empty
+    if (value.trim().length >= 2 && 
+        (!customerPhone && !customerVatId && !customerAddress)) {
+      customerSearchTimeoutRef.current = setTimeout(() => {
+        searchCustomer(value);
+      }, 500); // 500ms debounce
+    }
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (customerSearchTimeoutRef.current) {
+        clearTimeout(customerSearchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const fetchProducts = async () => {
     if (!user) {
@@ -419,6 +687,29 @@ export default function CreateInvoice() {
         cashier_name: cashierName,
       });
       
+      // Update customer cache with new/updated customer data
+      if (customerName.trim()) {
+        const nameKey = customerName.toLowerCase().trim();
+        const customerData: CustomerData = {
+          name: customerName,
+          phone: customerPhone,
+          vat_id: customerVatId,
+          address: customerAddress,
+        };
+        
+        const updatedCache = new Map(customerCacheRef.current);
+        updatedCache.set(nameKey, customerData);
+        setCustomerCache(updatedCache);
+        customerCacheRef.current = updatedCache;
+        
+        // Save to localStorage
+        const cacheObject: Record<string, CustomerData> = {};
+        updatedCache.forEach((value, key) => {
+          cacheObject[key] = value;
+        });
+        localStorage.setItem('customer_cache', JSON.stringify(cacheObject));
+      }
+      
       toast({ title: 'Invoice saved successfully' });
       navigate('/dashboard/invoices');
     } catch (e: any) {
@@ -445,8 +736,10 @@ export default function CreateInvoice() {
       return;
     }
 
-    const itemPages = Math.ceil(invoiceItems.length / ITEMS_PER_PAGE);
-    const lastPageItemCount = itemPages > 0 ? invoiceItems.length - ITEMS_PER_PAGE * (itemPages - 1) : 0;
+    // Use smart pagination
+    const paginatedPages = calculateSmartPagination(invoiceItems);
+    const itemPages = paginatedPages.length;
+    const lastPageItemCount = paginatedPages.length > 0 ? paginatedPages[paginatedPages.length - 1].items.length : 0;
     const summaryFitsOnLastItemsPage = itemPages > 0 && lastPageItemCount <= SUMMARY_ITEMS_THRESHOLD;
     const needsSummaryPage = !summaryFitsOnLastItemsPage;
     const totalPages = itemPages + (needsSummaryPage ? 1 : 0);
@@ -473,10 +766,10 @@ export default function CreateInvoice() {
 
     const roots: ReturnType<typeof createRoot>[] = [];
 
-    // Generate pages for items
-    for (let page = 1; page <= itemPages; page++) {
-      const startIndex = (page - 1) * ITEMS_PER_PAGE;
-      const pageItems = invoiceItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+    // Generate pages for items using smart pagination
+    paginatedPages.forEach((pageConfig, index) => {
+      const page = index + 1;
+      const { startIndex, items: pageItems } = pageConfig;
       
       const pageDiv = document.createElement('div');
       pageDiv.className = 'print-page';
@@ -505,9 +798,10 @@ export default function CreateInvoice() {
           totalPages={totalPages}
           startIndex={startIndex}
           showSummary={summaryFitsOnLastItemsPage && page === itemPages}
+          isQuotation={isQuotation}
         />
       );
-    }
+    });
 
     if (needsSummaryPage) {
       const summaryPageDiv = document.createElement('div');
@@ -536,6 +830,7 @@ export default function CreateInvoice() {
           totalPages={totalPages}
           startIndex={invoiceItems.length}
           showSummary={true}
+          isQuotation={isQuotation}
         />
       );
     }
@@ -666,8 +961,10 @@ export default function CreateInvoice() {
 
     setIsGeneratingPDF(true);
     try {
-      const itemPages = Math.ceil(invoiceItems.length / ITEMS_PER_PAGE);
-      const lastPageItemCount = itemPages > 0 ? invoiceItems.length - ITEMS_PER_PAGE * (itemPages - 1) : 0;
+      // Use smart pagination
+      const paginatedPages = calculateSmartPagination(invoiceItems);
+      const itemPages = paginatedPages.length;
+      const lastPageItemCount = paginatedPages.length > 0 ? paginatedPages[paginatedPages.length - 1].items.length : 0;
       const summaryFitsOnLastItemsPage = itemPages > 0 && lastPageItemCount <= SUMMARY_ITEMS_THRESHOLD;
       const needsSummaryPage = !summaryFitsOnLastItemsPage;
       const totalPages = itemPages + (needsSummaryPage ? 1 : 0);
@@ -682,10 +979,11 @@ export default function CreateInvoice() {
       const imgWidth = 210; // A4 width in mm
       const invoiceNo = generateInvoiceNumber();
 
-      // Generate pages for items (10 per page)
-      for (let page = 1; page <= itemPages; page++) {
-        const startIndex = (page - 1) * ITEMS_PER_PAGE;
-        const pageItems = invoiceItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+      // Generate pages for items using smart pagination
+      for (let index = 0; index < paginatedPages.length; index++) {
+        const pageConfig = paginatedPages[index];
+        const page = index + 1;
+        const { startIndex, items: pageItems } = pageConfig;
         
         // Create a temporary container for this page
         const tempDiv = document.createElement('div');
@@ -717,6 +1015,7 @@ export default function CreateInvoice() {
             totalPages={totalPages}
             startIndex={startIndex}
             showSummary={summaryFitsOnLastItemsPage && page === itemPages}
+            isQuotation={isQuotation}
           />
         );
 
@@ -775,6 +1074,7 @@ export default function CreateInvoice() {
             totalPages={totalPages}
             startIndex={invoiceItems.length}
             showSummary={true}
+            isQuotation={isQuotation}
           />
         );
 
@@ -1141,11 +1441,19 @@ export default function CreateInvoice() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Customer Name</Label>
-                  <Input
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Enter customer name"
-                  />
+                  <div className="relative">
+                    <Input
+                      value={customerName}
+                      onChange={(e) => handleCustomerNameChange(e.target.value)}
+                      placeholder="Enter customer name"
+                      disabled={isLoadingCustomer}
+                    />
+                    {isLoadingCustomer && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900"></div>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Phone</Label>
@@ -1163,6 +1471,16 @@ export default function CreateInvoice() {
                     placeholder="Enter VAT ID"
                   />
                 </div>
+                <div className="space-y-2 flex flex-col justify-end">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="quotation"
+                      checked={isQuotation}
+                      onCheckedChange={(checked) => setIsQuotation(checked === true)}
+                    />
+                    <Label htmlFor="quotation" className="cursor-pointer">Quotation</Label>
+                  </div>
+                </div>
                 <div className="col-span-2 space-y-2">
                   <Label>Address</Label>
                   <Input
@@ -1171,6 +1489,7 @@ export default function CreateInvoice() {
                     placeholder="Enter address"
                   />
                 </div>
+             
               </div>
             </CardContent>
           </Card>
@@ -1234,6 +1553,7 @@ export default function CreateInvoice() {
           notes={notes}
           receiverName={receiverName}
           cashierName={cashierName}
+          isQuotation={isQuotation}
         />
       </div>
 
@@ -1254,6 +1574,7 @@ export default function CreateInvoice() {
             notes={notes}
             receiverName={receiverName}
             cashierName={cashierName}
+            isQuotation={isQuotation}
           />
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setShowPreview(false)}>
