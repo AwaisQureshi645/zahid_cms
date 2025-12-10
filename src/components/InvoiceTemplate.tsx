@@ -181,7 +181,7 @@ export default function InvoiceTemplate({
           <div className="text-right" dir="rtl">
             <div className="font-bold text-sm mb-1">مؤسسة وثبة العز لقطع غيار التكييف والتبريد</div>
             <div className="text-xs">KINGDOM OF SAUDI ARABIA RIYADH</div>
-            <div className="text-xs">Phone:05555979802</div>
+            <div className="text-xs">Phone:05555979802 / 0506794038</div>
             <div className="text-xs">VAT ID:314265267200003</div>
           </div>
           <div className="w-20 h-20 flex items-center justify-center">
@@ -371,7 +371,7 @@ export default function InvoiceTemplate({
           <div className="grid grid-cols-3 gap-4 items-start">
             <div>
               <span className="font-bold">Receiver:</span> {receiverName || 'المستلم'}
-              <div className="mt-1">SAJJAD HOSEN: Salesman <span dir="rtl">الشيخ</span></div>
+              {/* <div className="mt-1">SAJJAD HOSEN: Salesman <span dir="rtl">الشيخ</span></div> */}
             </div>
             <div className="flex flex-col items-center">
               <div className="text-xs text-gray-600 mb-1" dir="rtl">رمز QR</div>

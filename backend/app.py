@@ -84,14 +84,26 @@ def create_app():
     def handle_preflight():
         if request.method == "OPTIONS":
             origin = request.headers.get('Origin')
-            if origin and origin in allowed_origins:
+            # Normalize origin (remove trailing slash)
+            normalized_origin = origin.rstrip('/') if origin else None
+            # Check if origin matches (with or without trailing slash)
+            origin_matches = (
+                origin in allowed_origins or 
+                normalized_origin in allowed_origins or
+                any(allowed.rstrip('/') == normalized_origin for allowed in allowed_origins)
+            )
+            if origin and origin_matches:
                 response = jsonify({})
+                # Use the original origin from request
                 response.headers['Access-Control-Allow-Origin'] = origin
                 response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
                 response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
                 response.headers['Access-Control-Allow-Credentials'] = 'true'
                 response.headers['Access-Control-Max-Age'] = '3600'
                 return response
+            # If origin doesn't match, still return 200 but without CORS headers
+            # This prevents CORS errors from breaking the request
+            return jsonify({}), 200
 
     # Initialize database
     init_db(app)
@@ -107,13 +119,22 @@ def create_app():
     @app.after_request
     def after_request(response):
         origin = request.headers.get('Origin')
-        if origin and origin in allowed_origins:
-            # Always set CORS headers for allowed origins
-            response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
-            response.headers['Access-Control-Max-Age'] = '3600'
+        if origin:
+            # Normalize origin for comparison
+            normalized_origin = origin.rstrip('/')
+            # Check if origin matches (with or without trailing slash)
+            origin_matches = (
+                origin in allowed_origins or 
+                normalized_origin in allowed_origins or
+                any(allowed.rstrip('/') == normalized_origin for allowed in allowed_origins)
+            )
+            if origin_matches:
+                # Always set CORS headers for allowed origins
+                response.headers['Access-Control-Allow-Origin'] = origin
+                response.headers['Access-Control-Allow-Credentials'] = 'true'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+                response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
+                response.headers['Access-Control-Max-Age'] = '3600'
         return response
 
     return app

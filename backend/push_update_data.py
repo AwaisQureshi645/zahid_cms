@@ -32,7 +32,7 @@ Usage:
 
 Example:
     python update_products_from_excel.py
-    python update_products_from_excel.py ../data1
+    python push_update_data.py ../data1
     python update_products_from_excel.py ../data1 123e4567-e89b-12d3-a456-426614174000
 """
 import os

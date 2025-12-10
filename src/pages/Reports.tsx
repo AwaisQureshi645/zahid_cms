@@ -209,7 +209,11 @@ export default function Reports() {
     });
 
     return grouped
-      .map(item => ({ date: item.date, revenue: Number(item.revenue.toFixed(2)) }))
+      .map(item => ({ 
+        date: item.date, 
+        revenue: Number.isFinite(item.revenue) ? Number(item.revenue.toFixed(2)) : 0 
+      }))
+      .filter(item => Number.isFinite(item.revenue) && item.revenue >= 0)
       .sort((a, b) => {
         const dateA = dateMap[a.date] || 0;
         const dateB = dateMap[b.date] || 0;
@@ -221,12 +225,19 @@ export default function Reports() {
   const productPerformanceData = useMemo(() => {
     // Calculate total value per product (quantity * unit_price)
     return products
-      .map(product => ({
-        name: product.item_name || product.description || product.item_no,
-        value: product.quantity * parseFloat(String(product.unit_price || 0)),
-        quantity: product.quantity,
-        revenue: 0, // Will be calculated from invoices if needed
-      }))
+      .map(product => {
+        const quantity = Number.isFinite(product.quantity) ? product.quantity : 0;
+        const unitPrice = Number.isFinite(parseFloat(String(product.unit_price || 0))) 
+          ? parseFloat(String(product.unit_price || 0)) 
+          : 0;
+        return {
+          name: product.item_name || product.description || product.item_no || 'Unknown',
+          value: Number.isFinite(quantity * unitPrice) ? quantity * unitPrice : 0,
+          quantity: quantity,
+          revenue: 0, // Will be calculated from invoices if needed
+        };
+      })
+      .filter(item => Number.isFinite(item.value) && item.value >= 0)
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
   }, [products]);
@@ -237,7 +248,11 @@ export default function Reports() {
 
     products.forEach(product => {
       const category = product.category || 'Uncategorized';
-      const value = product.quantity * parseFloat(String(product.unit_price || 0));
+      const quantity = Number.isFinite(product.quantity) ? product.quantity : 0;
+      const unitPrice = Number.isFinite(parseFloat(String(product.unit_price || 0))) 
+        ? parseFloat(String(product.unit_price || 0)) 
+        : 0;
+      const value = Number.isFinite(quantity * unitPrice) ? quantity * unitPrice : 0;
       
       if (!categoryMap[category]) {
         categoryMap[category] = { count: 0, totalValue: 0 };
@@ -248,11 +263,15 @@ export default function Reports() {
     });
 
     return Object.entries(categoryMap)
-      .map(([name, data]) => ({ 
-        name, 
-        value: Number(data.totalValue.toFixed(2)),
-        count: data.count 
-      }))
+      .map(([name, data]) => {
+        const value = Number.isFinite(data.totalValue) ? Number(data.totalValue.toFixed(2)) : 0;
+        return { 
+          name, 
+          value: value >= 0 ? value : 0,
+          count: data.count 
+        };
+      })
+      .filter(item => Number.isFinite(item.value) && item.value >= 0)
       .sort((a, b) => b.value - a.value);
   }, [products]);
 
@@ -264,14 +283,22 @@ export default function Reports() {
       if (invoice.items && Array.isArray(invoice.items)) {
         invoice.items.forEach((item: any) => {
           const productName = item.item_name || item.description || item.item_no || 'Unknown';
-          const amount = parseFloat(String(item.amount || item.total || 0));
-          revenueMap[productName] = (revenueMap[productName] || 0) + amount;
+          const amount = Number.isFinite(parseFloat(String(item.amount || item.total || 0)))
+            ? parseFloat(String(item.amount || item.total || 0))
+            : 0;
+          if (Number.isFinite(amount) && amount >= 0) {
+            revenueMap[productName] = (revenueMap[productName] || 0) + amount;
+          }
         });
       }
     });
 
     return Object.entries(revenueMap)
-      .map(([name, revenue]) => ({ name, revenue: Number(revenue.toFixed(2)) }))
+      .map(([name, revenue]) => {
+        const revenueValue = Number.isFinite(revenue) ? Number(revenue.toFixed(2)) : 0;
+        return { name, revenue: revenueValue >= 0 ? revenueValue : 0 };
+      })
+      .filter(item => Number.isFinite(item.revenue) && item.revenue >= 0)
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
   }, [invoices]);
