@@ -36,6 +36,8 @@ interface InvoiceTemplateProps {
   startIndex?: number;
   showSummary?: boolean;
   isQuotation?: boolean;
+  // ZATCA QR Code (Base64 string from backend)
+  qrCode?: string | null;
 }
 
 export default function InvoiceTemplate({
@@ -58,6 +60,7 @@ export default function InvoiceTemplate({
   startIndex = 0,
   showSummary = true,
   isQuotation = false,
+  qrCode,
 }: InvoiceTemplateProps) {
   const [logoError, setLogoError] = useState(false);
 
@@ -92,7 +95,7 @@ export default function InvoiceTemplate({
 
   return (
     <div 
-      className="bg-white p-8 text-base print:p-4 print:text-sm invoice-container" 
+      className="bg-white p-8 text-xs print:p-4 print:text-[10px] invoice-container" 
       dir="ltr" 
       style={{ 
         fontFamily: 'Arial, sans-serif',
@@ -180,23 +183,20 @@ export default function InvoiceTemplate({
       {/* Header */}
       <div className="border-2 border-black p-4 mb-1 print-break">
         <div className="flex justify-between items-start">
-          <div className="text-left flex-1" dir="rtl">
-            <div className="font-bold text-lg mb-1">مؤسسة وثبة العز لقطع غيار التكييف والتبريد</div>
-            <div className="text-base">KINGDOM OF SAUDI ARABIA RIYADH</div>
-            <div className="text-base">Phone:05555979802 / 0506794038</div>
-            <div className="text-base">VAT ID:314265267200003</div>
+          <div className="text-right" dir="rtl">
+            <div className="font-bold text-sm mb-1">مؤسسة وثبة العز لقطع غيار التكييف والتبريد</div>
+            <div className="text-xs">KINGDOM OF SAUDI ARABIA RIYADH</div>
+            <div className="text-xs">Phone:05555979802 / 0506794038</div>
+            <div className="text-xs">VAT ID:314265267200003</div>
           </div>
-          {/* Quotation heading between information and logo */}
           {isQuotation && (
-            <div className="flex items-center justify-center px-4" style={{ flex: '0 0 auto' }}>
-              <div className="font-bold text-2xl mt-12" style={{ fontSize: '28px', letterSpacing: '2px' }}>
-                QUOTATION
-              </div>
+            <div className="flex items-center justify-center flex-1">
+              <h1 className="text-2xl font-bold">QUOTATION</h1>
             </div>
           )}
-          <div className="w-32 h-32 flex items-center justify-center flex-shrink-0">
+          <div className="w-20 h-20 flex items-center justify-center">
             {logoError ? (
-              <span className="text-base text-gray-500">Logo</span>
+              <span className="text-xs text-gray-500">Logo</span>
             ) : (
               <img 
                 src="/images/logo.png" 
@@ -210,7 +210,7 @@ export default function InvoiceTemplate({
       </div>
 
       {/* Invoice Details */}
-      <div className="border-2 border-t-0 border-black p-3 grid grid-cols-2 gap-2 mb-1 text-base">
+      <div className="border-2 border-t-0 border-black p-2 grid grid-cols-2 gap-2 mb-1 text-xs">
         <div>
           <span className="font-bold">Invoice No:</span> {invoiceNo} | <span dir="rtl">رقم الفاتورة:</span>
         </div>
@@ -244,51 +244,51 @@ export default function InvoiceTemplate({
         >
           <thead>
             <tr className="bg-blue-100 print:bg-blue-100">
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '3%', borderWidth: '1px', fontSize: '14px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '3%', borderWidth: '1px' }}>
                 <div>م</div>
               </th>
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '7%', borderWidth: '1px', fontSize: '14px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '7%', borderWidth: '1px' }}>
                 <div>رقم الصنف</div>
-                <div className="text-sm">Item No.</div>
+                <div className="text-xs">Item No.</div>
               </th>
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '36%', borderWidth: '1px', fontSize: '14px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '36%', borderWidth: '1px' }}>
                 <div>الوصف</div>
-                <div className="text-sm">Description</div>
+                <div className="text-xs">Description</div>
               </th>
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '7%', borderWidth: '1px', fontSize: '14px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '7%', borderWidth: '1px' }}>
                 <div>الوحدة</div>
-                <div className="text-sm">Unit</div>
+                <div className="text-xs">Unit</div>
               </th>
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '7%', borderWidth: '1px', fontSize: '14px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '7%', borderWidth: '1px' }}>
                 <div>الكمية</div>
-                <div className="text-sm">Qty.</div>
+                <div className="text-xs">Qty.</div>
               </th>
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '9%', borderWidth: '1px', fontSize: '14px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '9%', borderWidth: '1px' }}>
                 <div>السعر</div>
-                <div className="text-sm">U. Price</div>
+                <div className="text-xs">U. Price</div>
               </th>
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '7%', borderWidth: '1px', fontSize: '14px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '7%', borderWidth: '1px' }}>
                 <div>الخصم</div>
-                <div className="text-sm">Dis.</div>
+                <div className="text-xs">Dis.</div>
               </th>
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '9%', borderWidth: '1px', fontSize: '14px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '9%', borderWidth: '1px' }}>
                 <div>المجموع</div>
-                <div className="text-sm">Total</div>
+                <div className="text-xs">Total</div>
               </th>
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '9%', borderWidth: '1px', fontSize: '14px' }}>
-                <div>قيمة الضريبة (15%)</div>
-                <div className="text-sm">Vat Value (15%)</div>
+              <th className="border border-black p-1 text-center" style={{ width: '9%', borderWidth: '1px' }}>
+                <div>قيمة الضريبة %15</div>
+                <div className="text-xs">Vat Value 15%</div>
               </th>
-              <th className="border border-black p-2 text-center font-bold" style={{ width: '13%', borderWidth: '1px', fontSize: '14px' }}>
+              <th className="border border-black p-1 text-center" style={{ width: '13%', borderWidth: '1px' }}>
                 <div>الاجمالي</div>
-                <div className="text-sm">Amount</div>
+                <div className="text-xs">Amount</div>
               </th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={10} className="border border-black p-4 text-center text-muted-foreground" style={{ borderWidth: '1px', fontSize: '14px' }}>
+                <td colSpan={10} className="border border-black p-4 text-center text-muted-foreground" style={{ borderWidth: '1px' }}>
                   No items added
                 </td>
               </tr>
@@ -302,18 +302,18 @@ export default function InvoiceTemplate({
                     breakInside: 'avoid'
                   }}
                 >
-                  <td className="border border-black p-2 text-center" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>{startIndex + index + 1}</td>
-                  <td className="border border-black p-2 text-center" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>{item.item_no}</td>
-                  <td className="border border-black p-2" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>{item.description}</td>
-                  <td className="border border-black p-2 text-center" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>{item.unit}</td>
-                  <td className="border border-black p-2 text-center" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>{item.quantity}</td>
-                  <td className="border border-black p-2 text-right" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>{item.unit_price.toFixed(2)}</td>
-                  <td className="border border-black p-2 text-right" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>{item.discount.toFixed(2)}</td>
-                  <td className="border border-black p-2 text-right" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>{item.total.toFixed(2)}</td>
-                  <td className="border border-black p-2 text-right" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>
+                  <td className="border border-black p-1 text-center" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>{startIndex + index + 1}</td>
+                  <td className="border border-black p-1 text-center" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>{item.item_no}</td>
+                  <td className="border border-black p-1" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>{item.description}</td>
+                  <td className="border border-black p-1 text-center" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>{item.unit}</td>
+                  <td className="border border-black p-1 text-center" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>{item.quantity}</td>
+                  <td className="border border-black p-1 text-right" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>{item.unit_price.toFixed(2)}</td>
+                  <td className="border border-black p-1 text-right" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>{item.discount.toFixed(2)}</td>
+                  <td className="border border-black p-1 text-right" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>{item.total.toFixed(2)}</td>
+                  <td className="border border-black p-1 text-right" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>
                     {item.vat_value.toFixed(2)}
                   </td>
-                  <td className="border border-black p-2 text-right font-bold" style={{ borderWidth: '1px', pageBreakInside: 'avoid', fontSize: '14px' }}>{item.amount.toFixed(2)}</td>
+                  <td className="border border-black p-1 text-right font-bold" style={{ borderWidth: '1px', pageBreakInside: 'avoid' }}>{item.amount.toFixed(2)}</td>
                 </tr>
               ))
             )}
@@ -329,39 +329,39 @@ export default function InvoiceTemplate({
           {/* Left side - Stamp & Signature Area */}
           <div className="border-r border-black p-4 flex flex-col items-center justify-center min-h-[200px]">
             <div className="border-2 border-dashed border-gray-400 rounded-lg w-full h-full flex flex-col items-center justify-center space-y-4">
-              <div className="text-base text-gray-500 mb-2" dir="rtl">ختم وتوقيع</div>
-              <div className="text-base text-gray-500 mb-4">Stamp & Signature</div>
+              <div className="text-sm text-gray-500 mb-2" dir="rtl">ختم وتوقيع</div>
+              <div className="text-sm text-gray-500 mb-4">Stamp & Signature</div>
               <div className="flex-1 w-full"></div>
             </div>
           </div>
 
           {/* Right side - Totals */}
           <div className="space-y-1">
-            <div className="flex justify-between p-3 border-b border-black" style={{ fontSize: '15px' }}>
+            <div className="flex justify-between p-2 border-b border-black">
               <span dir="rtl">: المجموع</span>
               <span className="font-bold">{subtotal.toFixed(3)}</span>
               <span>Total :</span>
             </div>
-            <div className="flex justify-between p-3 border-b border-black" style={{ fontSize: '15px' }}>
+            <div className="flex justify-between p-2 border-b border-black">
               <span dir="rtl">: الخصم</span>
               <span>{discount.toFixed(3)}</span>
               <span>Discount :</span>
             </div>
-            <div className="flex justify-between p-3 border-b border-black" style={{ fontSize: '15px' }}>
+            <div className="flex justify-between p-2 border-b border-black">
               <span dir="rtl">: الإجمالى قبل الضريبة</span>
               <span className="font-bold">{(subtotal - discount).toFixed(3)}</span>
               <span>Before VAT :</span>
             </div>
-            <div className="flex justify-between p-3 border-b border-black" style={{ fontSize: '15px' }}>
+            <div className="flex justify-between p-2 border-b border-black">
               <span dir="rtl">(15%) VAT</span>
               <span>{vatAmount.toFixed(3)}</span>
             </div>
-            <div className="flex justify-between p-3 border-b border-black" style={{ fontSize: '15px' }}>
+            <div className="flex justify-between p-2 border-b border-black">
               <span dir="rtl">: خصم إضافى</span>
               <span>0.000</span>
               <span>Extra Dis. :</span>
             </div>
-            <div className="flex justify-between p-3 bg-blue-50 font-bold" style={{ fontSize: '16px' }}>
+            <div className="flex justify-between p-2 bg-blue-50 font-bold text-sm">
               <span dir="rtl">: الإجمالى</span>
               <span>{total.toFixed(3)}</span>
               <span>Net Amount :</span>
@@ -369,34 +369,43 @@ export default function InvoiceTemplate({
           </div>
         </div>
 
-        <div className="border-t border-black p-3" style={{ fontSize: '15px' }}>
+        <div className="border-t border-black p-2">
           <div><span className="font-bold">Note:</span> {notes || 'ملاحظات'}</div>
         </div>
 
-        <div className="border-t border-black p-3 font-bold" style={{ fontSize: '15px' }}>
+        <div className="border-t border-black p-2 font-bold">
           {numberToWords(Math.round(total))}
         </div>
 
-        <div className="border-t border-black p-3 print-break">
+        <div className="border-t border-black p-2 print-break">
           <div className="grid grid-cols-3 gap-4 items-start">
-            <div style={{ fontSize: '15px' }}>
+            <div>
               <span className="font-bold">Receiver:</span> {receiverName || 'المستلم'}
               {/* <div className="mt-1">SAJJAD HOSEN: Salesman <span dir="rtl">الشيخ</span></div> */}
             </div>
             <div className="flex flex-col items-center">
-              <div className="text-sm text-gray-600 mb-1" dir="rtl">رمز QR</div>
-              <div className="text-sm text-gray-600 mb-1">QR Code</div>
+              <div className="text-xs text-gray-600 mb-1" dir="rtl">رمز QR</div>
+              {/* <div className="text-xs text-gray-600 mb-1">QR Code</div> */}
               <div className="bg-white p-1 border border-gray-300">
-                <QRCodeSVG 
-                  value={`Invoice: ${invoiceNo}\nAmount: ${total.toFixed(3)} SAR\nDate: ${formatDate(date)}`}
-                  size={80}
-                  level="M"
-                  style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                />
+                {qrCode ? (
+                  <QRCodeSVG 
+                    value={qrCode}
+                    size={80}
+                    level="M"
+                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                  />
+                ) : (
+                  <QRCodeSVG 
+                    value={`Invoice: ${invoiceNo}\nAmount: ${total.toFixed(3)} SAR\nDate: ${formatDate(date)}`}
+                    size={80}
+                    level="M"
+                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                  />
+                )}
               </div>
-              <div className="text-sm text-gray-500 mt-1">{invoiceNo}</div>
+              <div className="text-xs text-gray-500 mt-1">{invoiceNo}</div>
             </div>
-            <div className="text-right" style={{ fontSize: '15px' }}>
+            <div className="text-right">
               <div className="font-bold mb-2">Cashier:</div>
               <div>{cashierName || 'الصراف'}</div>
             </div>

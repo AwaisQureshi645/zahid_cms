@@ -7,6 +7,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from database import db
 from models import Invoice
 from supabase_client import get_supabase_client
+from zatca_qr import generate_zatca_qr, format_amount, format_datetime
+from datetime import datetime
 import json
 
 # Create a Blueprint for invoice routes
@@ -193,7 +195,30 @@ def create_invoice():
         # Log error but don't fail the invoice creation
         print(f"Warning: Error updating product quantities: {str(e)}")
 
-    return jsonify(invoice.to_dict()), 201
+    # Generate ZATCA QR code
+    invoice_dict = invoice.to_dict()
+    try:
+        # ZATCA Phase-1 required data
+        seller_name = "مؤسسة وثبة العز لقطع غيار التكييف والتبريد"
+        vat_number = "314265267200003"
+        invoice_datetime = format_datetime(invoice.created_at)
+        total_amount_str = format_amount(total_amount)
+        vat_amount_str = format_amount(vat_amount)
+        
+        qr_code = generate_zatca_qr(
+            seller_name=seller_name,
+            vat_number=vat_number,
+            invoice_datetime=invoice_datetime,
+            total_amount=total_amount_str,
+            vat_amount=vat_amount_str
+        )
+        invoice_dict["qr_code"] = qr_code
+    except Exception as e:
+        # Log error but don't fail the invoice creation
+        print(f"Warning: Failed to generate QR code: {str(e)}")
+        invoice_dict["qr_code"] = None
+
+    return jsonify(invoice_dict), 201
 
 
 @invoices_bp.get("/api/invoices")
@@ -201,12 +226,83 @@ def list_invoices():
     """
     Get all invoices from the database.
     Returns invoices ordered by creation date (newest first).
+    Each invoice includes ZATCA QR code.
     
     Returns:
         JSON array of invoice objects
     """
     invoices = Invoice.query.order_by(Invoice.created_at.desc()).all()
-    return jsonify([inv.to_dict() for inv in invoices])
+    result = []
+    
+    # ZATCA Phase-1 required data (fixed for this company)
+    seller_name = "مؤسسة وثبة العز لقطع غيار التكييف والتبريد"
+    vat_number = "314265267200003"
+    
+    for invoice in invoices:
+        invoice_dict = invoice.to_dict()
+        
+        # Generate QR code for each invoice
+        try:
+            invoice_datetime = format_datetime(invoice.created_at)
+            total_amount_str = format_amount(invoice.total_amount)
+            vat_amount_str = format_amount(invoice.vat_amount)
+            
+            qr_code = generate_zatca_qr(
+                seller_name=seller_name,
+                vat_number=vat_number,
+                invoice_datetime=invoice_datetime,
+                total_amount=total_amount_str,
+                vat_amount=vat_amount_str
+            )
+            invoice_dict["qr_code"] = qr_code
+        except Exception as e:
+            print(f"Warning: Failed to generate QR code for invoice {invoice.id}: {str(e)}")
+            invoice_dict["qr_code"] = None
+        
+        result.append(invoice_dict)
+    
+    return jsonify(result)
+
+
+@invoices_bp.get("/api/invoices/<int:invoice_id>/qr")
+def get_invoice_qr(invoice_id):
+    """
+    Get ZATCA QR code for a specific invoice.
+    
+    Args:
+        invoice_id: ID of the invoice
+        
+    Returns:
+        JSON object with qr_code field, or error with 404
+    """
+    invoice = Invoice.query.get(invoice_id)
+    
+    if not invoice:
+        return jsonify({"error": "Invoice not found"}), 404
+    
+    try:
+        # ZATCA Phase-1 required data
+        seller_name = "مؤسسة وثبة العز لقطع غيار التكييف والتبريد"
+        vat_number = "314265267200003"
+        invoice_datetime = format_datetime(invoice.created_at)
+        total_amount_str = format_amount(invoice.total_amount)
+        vat_amount_str = format_amount(invoice.vat_amount)
+        
+        qr_code = generate_zatca_qr(
+            seller_name=seller_name,
+            vat_number=vat_number,
+            invoice_datetime=invoice_datetime,
+            total_amount=total_amount_str,
+            vat_amount=vat_amount_str
+        )
+        
+        return jsonify({
+            "invoice_id": invoice.id,
+            "invoice_no": invoice.invoice_no,
+            "qr_code": qr_code
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate QR code: {str(e)}"}), 500
 
 
 @invoices_bp.delete("/api/invoices/<int:invoice_id>")
