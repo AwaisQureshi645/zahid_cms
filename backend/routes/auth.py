@@ -1,26 +1,33 @@
 """
 Simple authentication routes for user registration and login.
-Uses a simple users table in Supabase with username, email, and password.
+Uses a simple users collection in MongoDB with username, email, and password.
 """
 from flask import Blueprint, request, jsonify
-from supabase_client import get_supabase_client
+from mongodb_client import get_collection
 import hashlib
 import secrets
 import uuid
 from datetime import datetime
+from bson import ObjectId
+from typing import Any
 
 # Create a Blueprint for auth routes
 auth_bp = Blueprint('auth', __name__)
 
 
-def get_supabase():
-    """
-    Lazy initialization of Supabase client.
-    """
-    try:
-        return get_supabase_client()
-    except RuntimeError as e:
-        raise RuntimeError(f"Supabase configuration error: {str(e)}. Please check your .env file.")
+def convert_objectid_to_str(obj: Any) -> Any:
+    """Convert ObjectId to string recursively and add 'id' field for compatibility."""
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, dict):
+        converted = {k: convert_objectid_to_str(v) for k, v in obj.items()}
+        # Add 'id' field mapped to '_id' for frontend compatibility
+        if '_id' in converted and 'id' not in converted:
+            converted['id'] = str(converted['_id'])
+        return converted
+    elif isinstance(obj, list):
+        return [convert_objectid_to_str(item) for item in obj]
+    return obj
 
 
 def hash_password(password: str) -> str:
@@ -63,16 +70,16 @@ def register():
             return jsonify({"error": "Password must be at least 6 characters"}), 400
         
         # Check if email already exists
-        supabase = get_supabase()
-        existing_user = supabase.table("users").select("id").eq("email", email).execute()
+        collection = get_collection("users")
+        existing_user = collection.find_one({"email": email})
         
-        if existing_user.data:
+        if existing_user:
             return jsonify({"error": "Email already registered"}), 400
         
         # Check if username already exists
-        existing_username = supabase.table("users").select("id").eq("username", username).execute()
+        existing_username = collection.find_one({"username": username})
         
-        if existing_username.data:
+        if existing_username:
             return jsonify({"error": "Username already taken"}), 400
         
         # Hash password
@@ -88,24 +95,32 @@ def register():
             "updated_at": datetime.utcnow().isoformat()
         }
         
-        result = supabase.table("users").insert(user_data).execute()
+        result = collection.insert_one(user_data)
         
-        if result.data:
+        if result.inserted_id:
             # Return user data (without password)
-            user = result.data[0]
+            user_data.pop("password", None)
+            user_data = convert_objectid_to_str(user_data)
             return jsonify({
                 "message": "User registered successfully",
                 "user": {
-                    "id": user["id"],
-                    "username": user["username"],
-                    "email": user["email"]
+                    "id": user_data["id"],
+                    "username": user_data["username"],
+                    "email": user_data["email"]
                 }
             }), 201
         else:
             return jsonify({"error": "Failed to create user"}), 500
             
     except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
+        # Handle MongoDB connection errors specifically
+        error_msg = str(e)
+        if "shutdown" in error_msg.lower() or "thread" in error_msg.lower():
+            return jsonify({
+                "error": "Database connection error. Please try again in a moment.",
+                "details": "The server may be restarting. Please wait a few seconds and try again."
+            }), 503
+        return jsonify({"error": f"Registration failed: {error_msg}"}), 500
     except Exception as e:
         error_msg = str(e)
         return jsonify({"error": f"Registration failed: {error_msg}"}), 500
@@ -134,16 +149,14 @@ def login():
             return jsonify({"error": "Password is required"}), 400
         
         # Find user by email
-        supabase = get_supabase()
-        result = supabase.table("users").select("*").eq("email", email).execute()
+        collection = get_collection("users")
+        user = collection.find_one({"email": email})
         
-        if not result.data or len(result.data) == 0:
+        if not user:
             return jsonify({"error": "Invalid email or password"}), 401
         
-        user = result.data[0]
-        
         # Verify password
-        if not verify_password(password, user["password"]):
+        if not verify_password(password, user.get("password", "")):
             return jsonify({"error": "Invalid email or password"}), 401
         
         # Generate a simple token (in production, use JWT)
@@ -153,16 +166,22 @@ def login():
         return jsonify({
             "message": "Login successful",
             "user": {
-                "id": user["id"],
-                "username": user["username"],
-                "email": user["email"]
+                "id": user.get("id", str(user.get("_id", ""))),
+                "username": user.get("username", ""),
+                "email": user.get("email", "")
             },
             "token": token
         }), 200
             
     except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
+        # Handle MongoDB connection errors specifically
+        error_msg = str(e)
+        if "shutdown" in error_msg.lower() or "thread" in error_msg.lower():
+            return jsonify({
+                "error": "Database connection error. Please try again in a moment.",
+                "details": "The server may be restarting. Please wait a few seconds and try again."
+            }), 503
+        return jsonify({"error": f"Login failed: {error_msg}"}), 500
     except Exception as e:
         error_msg = str(e)
         return jsonify({"error": f"Login failed: {error_msg}"}), 500
-

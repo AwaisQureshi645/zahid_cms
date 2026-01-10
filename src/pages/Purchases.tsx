@@ -53,7 +53,8 @@ const purchaseProductSchema = z.object({
 });
 
 interface PurchaseProduct {
-  id: string;
+  id?: string;
+  _id?: string;
   item_no: string;
   item_name?: string;
   description: string;
@@ -217,8 +218,14 @@ export default function Purchases() {
     }
 
     if (editingProduct) {
+      // Get the product ID, using id or _id as fallback
+      const productId = editingProduct.id || editingProduct._id;
+      if (!productId) {
+        toast({ title: 'Error', description: 'Product ID is missing', variant: 'destructive' });
+        return;
+      }
       try {
-        await apiPut(`/api/purchase-products/${editingProduct.id}`, formData);
+        await apiPut(`/api/purchase-products/${productId}`, formData);
         toast({ title: 'Purchase product updated successfully' });
         setShowDialog(false);
         fetchPurchaseProducts();
@@ -239,11 +246,18 @@ export default function Purchases() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (product: PurchaseProduct) => {
     if (!confirm('Are you sure you want to delete this purchase product?')) return;
 
+    // Get the product ID, using id or _id as fallback
+    const productId = product.id || product._id;
+    if (!productId) {
+      toast({ title: 'Error', description: 'Product ID is missing', variant: 'destructive' });
+      return;
+    }
+
     try {
-      await apiDelete(`/api/purchase-products/${encodeURIComponent(id)}`);
+      await apiDelete(`/api/purchase-products/${encodeURIComponent(productId)}`);
       toast({ title: 'Purchase product deleted successfully' });
       fetchPurchaseProducts();
     } catch (e) {
@@ -421,8 +435,10 @@ export default function Purchases() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {paginatedProducts.map((product) => (
-                          <TableRow key={product.id}>
+                        {paginatedProducts.map((product) => {
+                          const productId = product.id || product._id || '';
+                          return (
+                            <TableRow key={productId}>
                             <TableCell className="font-medium">{product.item_no}</TableCell>
                             <TableCell>{product.description}</TableCell>
                             <TableCell>{product.category || '-'}</TableCell>
@@ -446,14 +462,15 @@ export default function Purchases() {
                                 <Button
                                   size="sm"
                                   variant="destructive"
-                                  onClick={() => handleDelete(product.id)}
+                                  onClick={() => handleDelete(product)}
                                 >
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
                             </TableCell>
                           </TableRow>
-                        ))}
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -587,11 +604,22 @@ export default function Purchases() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="category">Category</Label>
-                  <Input
-                    id="category"
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  />
+                  <Select
+                    value={formData.category || undefined}
+                    onValueChange={(value) => setFormData({ ...formData, category: value === '__none__' ? '' : value })}
+                  >
+                    <SelectTrigger id="category">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="vat_percent">VAT %</Label>

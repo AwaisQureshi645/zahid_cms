@@ -1,8 +1,8 @@
 """
 Excel to Products Table Update Script
 
-This script reads Excel files from the data1 folder and updates the products table
-in Supabase. It uses a priority-based matching system:
+This script reads Excel files from the data1 folder and updates the products collection
+in MongoDB. It uses a priority-based matching system:
 
 1. First Priority: Match by Description + user_id
    - If a product with the same description and user_id exists, update it
@@ -18,6 +18,7 @@ Expected Excel columns:
     - user_id: User ID (UUID)
     - category: Product category
     - Item_No: Item number/identifier
+    - Item_Name: Item name (optional)
     - Description: Product description
     - Unit: Unit of measurement (e.g., "Piece", "Kg")
     - Quantity: Product quantity
@@ -28,12 +29,12 @@ Expected Excel columns:
     - Amount: Total amount (calculated field, not stored)
 
 Usage:
-    python update_products_from_excel.py [data1_folder_path] [user_id]
+    python push_update_data.py [data1_folder_path] [user_id]
 
 Example:
-    python update_products_from_excel.py
+    python push_update_data.py
     python push_update_data.py ../data1
-    python update_products_from_excel.py ../data1 123e4567-e89b-12d3-a456-426614174000
+    python push_update_data.py ../data1 123e4567-e89b-12d3-a456-426614174000
 """
 import os
 import sys
@@ -42,7 +43,8 @@ import time
 from pathlib import Path
 import pandas as pd
 from dotenv import load_dotenv
-from supabase_client import get_supabase_client
+from mongodb_client import get_collection
+from datetime import datetime
 
 # Load environment variables from multiple locations
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
@@ -56,21 +58,19 @@ if os.path.exists(backend_env):
 load_dotenv(override=False)
 
 
-def get_first_user_id(supabase):
+def get_first_user_id():
     """
-    Get the first user_id from the profiles table.
+    Get the first user_id from the users collection.
     This is used as a fallback when user_id is not provided.
-    
-    Args:
-        supabase: Supabase client instance
     
     Returns:
         str: First user_id found, or None if no users exist
     """
     try:
-        resp = supabase.table("profiles").select("id").limit(1).execute()
-        if resp.data and len(resp.data) > 0:
-            return resp.data[0]["id"]
+        collection = get_collection("users")
+        user = collection.find_one()
+        if user:
+            return user.get("id") or str(user.get("_id", ""))
     except Exception as e:
         print(f"Error getting user_id: {e}")
     return None
@@ -107,12 +107,11 @@ def get_column_value(row, possible_names, default=""):
     return default
 
 
-def find_product_by_description(supabase, description, user_id):
+def find_product_by_description(description, user_id):
     """
     Find a product by description and user_id.
     
     Args:
-        supabase: Supabase client instance
         description: Product description to search for
         user_id: User ID to match
     
@@ -120,20 +119,19 @@ def find_product_by_description(supabase, description, user_id):
         dict: Product data if found, None otherwise
     """
     try:
-        resp = supabase.table("products").select("*").eq("description", description).eq("user_id", user_id).execute()
-        if resp.data and len(resp.data) > 0:
-            return resp.data[0]
+        collection = get_collection("products")
+        product = collection.find_one({"description": description, "user_id": user_id})
+        return product
     except Exception as e:
         print(f"Error finding product by description: {e}")
     return None
 
 
-def find_product_by_item_no(supabase, item_no, user_id):
+def find_product_by_item_no(item_no, user_id):
     """
     Find a product by item_no and user_id.
     
     Args:
-        supabase: Supabase client instance
         item_no: Item number to search for
         user_id: User ID to match
     
@@ -141,9 +139,9 @@ def find_product_by_item_no(supabase, item_no, user_id):
         dict: Product data if found, None otherwise
     """
     try:
-        resp = supabase.table("products").select("*").eq("item_no", item_no).eq("user_id", user_id).execute()
-        if resp.data and len(resp.data) > 0:
-            return resp.data[0]
+        collection = get_collection("products")
+        product = collection.find_one({"item_no": item_no, "user_id": user_id})
+        return product
     except Exception as e:
         print(f"Error finding product by item_no: {e}")
     return None
@@ -174,7 +172,7 @@ def validate_product_data(product_data):
         elif isinstance(value, str):
             # Ensure string is not empty or just whitespace (except for optional fields)
             if key in ['category'] and not value.strip():
-                cleaned_data[key] = None
+                cleaned_data[key] = ""
             else:
                 cleaned_data[key] = value.strip() if value else value
         else:
@@ -183,12 +181,11 @@ def validate_product_data(product_data):
     return cleaned_data
 
 
-def update_or_insert_product(supabase, product_data, existing_product=None, max_retries=3):
+def update_or_insert_product(product_data, existing_product=None, max_retries=3):
     """
     Update an existing product or insert a new one with retry logic.
     
     Args:
-        supabase: Supabase client instance
         product_data: Dictionary with product data to update/insert
         existing_product: Existing product data if found, None otherwise
         max_retries: Maximum number of retry attempts for network errors
@@ -206,34 +203,42 @@ def update_or_insert_product(supabase, product_data, existing_product=None, max_
     else:
         update_data = product_data
     
+    now = datetime.utcnow().isoformat()
+    
     for attempt in range(max_retries):
         try:
+            collection = get_collection("products")
+            
             if existing_product:
                 # Update existing product
-                product_id = existing_product["id"]
-                resp = supabase.table("products").update(update_data).eq("id", product_id).execute()
-                if resp.data:
+                product_id = existing_product.get("_id")
+                update_data["updated_at"] = now
+                result = collection.update_one(
+                    {"_id": product_id},
+                    {"$set": update_data}
+                )
+                if result.modified_count > 0 or result.matched_count > 0:
                     return True
                 else:
-                    print(f"  Warning: Update returned no data for item_no: {product_data.get('item_no')}")
+                    print(f"  Warning: Update returned no matches for item_no: {product_data.get('item_no')}")
                     return False
             else:
                 # Insert new product
-                resp = supabase.table("products").insert(update_data).execute()
-                if resp.data:
+                update_data["created_at"] = now
+                update_data["updated_at"] = now
+                result = collection.insert_one(update_data)
+                if result.inserted_id:
                     return True
                 else:
-                    print(f"  Warning: Insert returned no data for item_no: {product_data.get('item_no')}")
+                    print(f"  Warning: Insert returned no ID for item_no: {product_data.get('item_no')}")
                     return False
         except Exception as e:
             error_str = str(e)
-            # Check if it's a network/connection error (502, 503, 504, or Cloudflare errors)
+            # Check if it's a network/connection error
             is_network_error = (
-                '502' in error_str or 
-                '503' in error_str or 
-                '504' in error_str or 
-                'Internal server error' in error_str or
-                'Cloudflare' in error_str
+                'connection' in error_str.lower() or
+                'timeout' in error_str.lower() or
+                'network' in error_str.lower()
             )
             
             if is_network_error and attempt < max_retries - 1:
@@ -246,7 +251,7 @@ def update_or_insert_product(supabase, product_data, existing_product=None, max_
                 print(f"  Error updating/inserting product: {e}")
                 print(f"  Product data: {product_data}")
                 if existing_product:
-                    print(f"  Existing product ID: {existing_product.get('id')}")
+                    print(f"  Existing product ID: {existing_product.get('_id')}")
                 return False
     
     return False
@@ -254,7 +259,7 @@ def update_or_insert_product(supabase, product_data, existing_product=None, max_
 
 def process_excel_file(excel_path, default_user_id=None):
     """
-    Process a single Excel file and update products table.
+    Process a single Excel file and update products collection.
     
     Args:
         excel_path: Path to the Excel file
@@ -277,13 +282,6 @@ def process_excel_file(excel_path, default_user_id=None):
     print(f"Found {len(df)} rows in Excel file")
     print(f"Columns: {df.columns.tolist()}")
     
-    # Get Supabase client
-    try:
-        supabase = get_supabase_client()
-    except Exception as e:
-        print(f"Error connecting to Supabase: {e}")
-        return (0, len(df), 0)
-    
     # Check if Excel file has user_id column
     excel_has_user_id = any(col.lower() in ["user_id", "user id"] for col in df.columns)
     
@@ -299,19 +297,19 @@ def process_excel_file(excel_path, default_user_id=None):
                 if len(user_ids) > 1:
                     print(f"Warning: Multiple user_ids found in Excel. Using first one: {default_user_id}")
             else:
-                # Try to get from Supabase
-                default_user_id = get_first_user_id(supabase)
+                # Try to get from MongoDB
+                default_user_id = get_first_user_id()
                 if not default_user_id:
-                    print("ERROR: No user_id found in Excel or Supabase. Please provide user_id.")
+                    print("ERROR: No user_id found in Excel or MongoDB. Please provide user_id.")
                     return (0, len(df), 0)
-                print(f"Using user_id from Supabase: {default_user_id}")
+                print(f"Using user_id from MongoDB: {default_user_id}")
         else:
-            # Try to get from Supabase
-            default_user_id = get_first_user_id(supabase)
+            # Try to get from MongoDB
+            default_user_id = get_first_user_id()
             if not default_user_id:
                 print("ERROR: No user_id found. Please create a user first or provide user_id.")
                 return (0, len(df), 0)
-            print(f"Using user_id from Supabase: {default_user_id}")
+            print(f"Using user_id from MongoDB: {default_user_id}")
     
     # Process each row
     success_count = 0
@@ -330,6 +328,7 @@ def process_excel_file(excel_path, default_user_id=None):
             # Map columns (handle case-insensitive and variations)
             category_value = get_column_value(row, ["category", "Category", "CATEGORY"], "")
             item_no_value = get_column_value(row, ["Item_No", "Item No", "item_no", "ITEM_NO", "ItemNo"], "")
+            item_name_value = get_column_value(row, ["Item_Name", "Item Name", "item_name", "ITEM_NAME", "ItemName", "name", "Name"], "")
             description_value = get_column_value(row, ["Description", "description", "DESCRIPTION"], "")
             unit_value = get_column_value(row, ["Unit", "unit", "UNIT"], "Piece")
             quantity_value = get_column_value(row, ["Quantity", "quantity", "QUANTITY"], "0")
@@ -343,94 +342,36 @@ def process_excel_file(excel_path, default_user_id=None):
                 skipped_count += 1
                 continue
             
-            # Prepare product data with proper type conversion and validation
-            try:
-                # Convert quantity to int, handling invalid values
-                try:
-                    qty = float(quantity_value or 0)
-                    if math.isnan(qty) or math.isinf(qty):
-                        qty = 0
-                    quantity = int(qty)
-                except (ValueError, TypeError):
-                    quantity = 0
-                
-                # Convert unit_price to float, handling invalid values
-                try:
-                    up = float(unit_price_value or 0)
-                    if math.isnan(up) or math.isinf(up):
-                        up = 0.0
-                    unit_price = round(up, 2)
-                except (ValueError, TypeError):
-                    unit_price = 0.0
-                
-                # Convert discount to float, handling invalid values
-                try:
-                    disc = float(discount_value or 0)
-                    if math.isnan(disc) or math.isinf(disc):
-                        disc = 0.0
-                    discount = round(disc, 2)
-                except (ValueError, TypeError):
-                    discount = 0.0
-                
-                # Convert vat_percent to float, handling invalid values
-                try:
-                    vat = float(vat_percent_value or 15)
-                    if math.isnan(vat) or math.isinf(vat):
-                        vat = 15.0
-                    vat_percent = round(vat, 2)
-                except (ValueError, TypeError):
-                    vat_percent = 15.0
-                
-            except Exception as e:
-                print(f"Row {idx + 2}: Error converting numeric values: {e}")
-                quantity = 0
-                unit_price = 0.0
-                discount = 0.0
-                vat_percent = 15.0
-            
             # Prepare product data
             product_data = {
                 "user_id": row_user_id,
                 "item_no": item_no_value,
+                "item_name": item_name_value if item_name_value else "",
                 "description": description_value,
-                "category": category_value if category_value else None,
+                "category": category_value if category_value else "",
                 "unit": unit_value if unit_value else "Piece",
-                "quantity": quantity,
-                "unit_price": unit_price,
-                "discount": discount,
-                "vat_percent": vat_percent
+                "quantity": int(float(quantity_value or 0)),
+                "unit_price": float(unit_price_value or 0),
+                "discount": float(discount_value or 0),
+                "vat_percent": float(vat_percent_value or 15)
             }
             
-            # Step 1: First check if Description and user_id match
-            existing_product = find_product_by_description(supabase, description_value, row_user_id)
-            match_type = None
+            # Priority 1: Try to find by Description + user_id
+            existing_product = find_product_by_description(description_value, row_user_id)
             
-            if existing_product:
-                # Found by Description + user_id - update it
-                match_type = "description"
-            else:
-                # Step 2: If not found by Description, check Item_No + user_id
-                existing_product = find_product_by_item_no(supabase, item_no_value, row_user_id)
-                if existing_product:
-                    # Found by Item_No + user_id - update it
-                    match_type = "item_no"
-                else:
-                    # Step 3: Not found by either - will insert new record
-                    match_type = "new"
-                    existing_product = None
+            # Priority 2: If not found by description, try Item_No + user_id
+            if not existing_product:
+                existing_product = find_product_by_item_no(item_no_value, row_user_id)
             
             # Update or insert
-            if update_or_insert_product(supabase, product_data, existing_product):
-                if match_type == "description":
-                    action = "Updated (matched by Description)"
-                elif match_type == "item_no":
-                    action = "Updated (matched by Item_No)"
+            if update_or_insert_product(product_data, existing_product):
+                if existing_product:
+                    print(f"Row {idx + 2}: Updated product - Item_No: {item_no_value}, Description: {description_value[:50]}")
                 else:
-                    action = "Inserted (new record)"
-                print(f"Row {idx + 2}: {action} - Item_No: {item_no_value}, Description: {description_value[:50]}")
+                    print(f"Row {idx + 2}: Inserted new product - Item_No: {item_no_value}, Description: {description_value[:50]}")
                 success_count += 1
             else:
-                print(f"Row {idx + 2}: Failed to update/insert - Item_No: {item_no_value}")
+                print(f"Row {idx + 2}: Failed to update/insert product - Item_No: {item_no_value}")
                 error_count += 1
                 
         except Exception as e:
@@ -457,31 +398,31 @@ def main():
     else:
         # Default: look for data1 folder in parent directory
         backend_dir = Path(__file__).parent
-        data1_folder = backend_dir.parent / "data1"
+        data1_folder = backend_dir / "data1"
     
     # If data1 folder doesn't exist, try current directory
     if not data1_folder.exists():
-        data1_folder = Path(__file__).parent / "data1"
+        data1_folder = Path("data1")
     
-    # Validate folder exists
     if not data1_folder.exists():
-        print(f"ERROR: data1 folder not found: {data1_folder}")
-        print(f"Usage: python update_products_from_excel.py [data1_folder_path] [user_id]")
+        print(f"Error: data1 folder not found at {data1_folder}")
+        print("Please provide the path to the data1 folder as an argument.")
         sys.exit(1)
     
-    print(f"Scanning folder: {data1_folder}")
+    # Get user_id from command line if provided
+    default_user_id = None
+    if len(sys.argv) > 2:
+        default_user_id = sys.argv[2]
+        print(f"Using provided user_id: {default_user_id}")
     
-    # Find all Excel files
+    # Find all Excel files in data1 folder
     excel_files = list(data1_folder.glob("*.xlsx")) + list(data1_folder.glob("*.xls"))
     
     if not excel_files:
         print(f"No Excel files found in {data1_folder}")
         sys.exit(1)
     
-    print(f"Found {len(excel_files)} Excel file(s)")
-    
-    # Optional: provide user_id as second command-line argument
-    default_user_id = sys.argv[2] if len(sys.argv) > 2 else None
+    print(f"Found {len(excel_files)} Excel file(s) in {data1_folder}")
     
     # Process each Excel file
     total_success = 0
@@ -494,11 +435,10 @@ def main():
         total_errors += errors
         total_skipped += skipped
     
-    # Final summary
+    # Print final summary
     print(f"\n{'='*60}")
     print("FINAL SUMMARY")
     print(f"{'='*60}")
-    print(f"Total files processed: {len(excel_files)}")
     print(f"  ✅ Total Success: {total_success}")
     print(f"  ❌ Total Errors: {total_errors}")
     print(f"  ⏭️  Total Skipped: {total_skipped}")
@@ -507,4 +447,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

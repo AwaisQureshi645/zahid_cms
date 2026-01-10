@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { apiGet, apiPut, apiPost } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import DashboardLayout from '@/components/DashboardLayout';
 
@@ -31,59 +31,46 @@ export default function Settings() {
   const fetchSettings = async () => {
     if (!user) return;
     
-    // Get the first company settings record (shared across all users)
-    const { data, error } = await supabase
-      .from('company_settings')
-      .select('*')
-      .limit(1)
-      .maybeSingle();
-
-    if (!error && data) {
-      setFormData({
-        company_name_en: data.company_name_en || '',
-        company_name_ar: data.company_name_ar || '',
-        phone: data.phone || '',
-        vat_id: data.vat_id || '',
-        address_en: data.address_en || '',
-        address_ar: data.address_ar || '',
-      });
+    try {
+      const data = await apiGet<any>('/api/company-settings');
+      if (data && Object.keys(data).length > 0) {
+        setFormData({
+          company_name_en: data.company_name_en || '',
+          company_name_ar: data.company_name_ar || '',
+          phone: data.phone || '',
+          vat_id: data.vat_id || '',
+          address_en: data.address_en || '',
+          address_ar: data.address_ar || '',
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
     }
   };
 
   const handleSave = async () => {
     if (!user) return;
 
-    // Get the first company settings record (shared across all users)
-    const { data: existing } = await supabase
-      .from('company_settings')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-
-    let error;
-    if (existing) {
-      // Update the existing shared settings
-      const result = await supabase
-        .from('company_settings')
-        .update(formData)
-        .eq('id', existing.id);
-      error = result.error;
-    } else {
-      // Create new shared settings (use the current user's ID for the first record)
-      const result = await supabase
-        .from('company_settings')
-        .insert([{ ...formData, user_id: user.id }]);
-      error = result.error;
-    }
-
-    if (error) {
+    try {
+      // Try to update first, if it fails, create new
+      try {
+        await apiPut('/api/company-settings', formData);
+        toast({ title: 'Settings saved successfully' });
+      } catch (updateError: any) {
+        // If update fails (404), create new
+        if (updateError.message && updateError.message.includes('404')) {
+          await apiPost('/api/company-settings', { ...formData, user_id: user.id });
+          toast({ title: 'Settings saved successfully' });
+        } else {
+          throw updateError;
+        }
+      }
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: 'Failed to save settings',
+        description: error.message || 'Failed to save settings',
         variant: 'destructive',
       });
-    } else {
-      toast({ title: 'Settings saved successfully' });
     }
   };
 

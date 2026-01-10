@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { apiGet } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import InvoiceTemplate from '@/components/InvoiceTemplate';
@@ -74,6 +74,7 @@ export default function CreateInvoice() {
   const [showPreview, setShowPreview] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const ITEMS_PER_PAGE = 15;
   const SUMMARY_ITEMS_THRESHOLD = 9;
   
@@ -95,6 +96,39 @@ export default function CreateInvoice() {
     fetchProducts();
   }, [user]);
 
+  // Auto-fill customer information when customer name is entered
+  useEffect(() => {
+    if (!user?.id || !customerName.trim()) {
+      // Clear fields if customer name is empty
+      if (!customerName.trim()) {
+        return;
+      }
+      return;
+    }
+    
+    // Debounce: wait 500ms after user stops typing
+    const timeoutId = setTimeout(async () => {
+      try {
+        const customer = await apiGet<any>(
+          `/api/customers/search?user_id=${encodeURIComponent(user.id)}&name=${encodeURIComponent(customerName.trim())}`
+        );
+        
+        // Only auto-fill if customer is found and name matches exactly
+        if (customer && customer.customer_name && 
+            customer.customer_name.toLowerCase() === customerName.trim().toLowerCase()) {
+          setCustomerPhone(customer.customer_phone || '');
+          setCustomerVatId(customer.customer_vat_id || '');
+          setCustomerAddress(customer.customer_address || '');
+        }
+      } catch (error) {
+        // Silently fail - customer might not exist yet
+        console.log('Customer not found');
+      }
+    }, 500); // Wait 500ms after user stops typing
+    
+    return () => clearTimeout(timeoutId);
+  }, [customerName, user?.id]);
+
   const fetchProducts = async () => {
     if (!user) {
       setLoadingProducts(false);
@@ -103,15 +137,8 @@ export default function CreateInvoice() {
     
     setLoadingProducts(true);
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*');
-
-      if (!error && data) {
-        setProducts(data);
-      } else {
-        setProducts([]);
-      }
+      const data = await apiGet<any[]>('/api/products');
+      setProducts(data || []);
     } catch (error) {
       console.error('Error fetching products:', error);
       setProducts([]);
@@ -402,6 +429,7 @@ export default function CreateInvoice() {
     const invoiceNo = generateInvoiceNumber();
 
     // Save to Flask backend (primary storage)
+    setIsSaving(true);
     try {
       const response = await apiPost<{ qr_code?: string }>('/api/invoices', {
         invoice_no: invoiceNo,
@@ -415,7 +443,8 @@ export default function CreateInvoice() {
         discount: totals.discount,
         vat_amount: totals.vatAmount,
         total_amount: totals.total,
-        currency: 'USD',
+        currency: 'SAR',
+        user_id: user?.id || '',
         notes: notes,
         receiver_name: receiverName,
         cashier_name: cashierName,
@@ -432,6 +461,8 @@ export default function CreateInvoice() {
         variant: 'destructive',
       });
       console.error('Failed to save invoice to backend:', e);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -881,9 +912,9 @@ export default function CreateInvoice() {
               <Eye className="h-4 w-4 mr-2" />
               Preview
             </Button>
-            <Button onClick={handleSave}>
+            <Button onClick={handleSave} disabled={isSaving || invoiceItems.length === 0}>
               <Save className="h-4 w-4 mr-2" />
-              Save
+              {isSaving ? 'Saving...' : 'Save'}
             </Button>
           </div>
         </div>

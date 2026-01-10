@@ -6,9 +6,11 @@ and sets up database connections.
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
+import atexit
 from dotenv import load_dotenv
 from database import init_db
-from routes import products, invoices, debug, auth, purchase_products
+from routes import products, invoices, debug, auth, purchase_products, company_settings, customers
+from mongodb_client import close_mongodb_client
 
 # Load environment variables at module level (before app creation)
 # Try loading from project root first, then backend directory
@@ -114,6 +116,19 @@ def create_app():
     app.register_blueprint(debug.debug_bp)
     app.register_blueprint(auth.auth_bp)
     app.register_blueprint(purchase_products.purchase_products_bp)
+    app.register_blueprint(company_settings.company_settings_bp)
+    app.register_blueprint(customers.customers_bp)
+    
+    # Register shutdown handler to close MongoDB connection
+    @app.teardown_appcontext
+    def close_db(error):
+        """Close MongoDB connection on app context teardown."""
+        # Don't close here as we want to reuse the connection
+        # Connection will be closed on app shutdown via atexit
+        pass
+    
+    # Register cleanup function to run on exit
+    atexit.register(close_mongodb_client)
 
     # Additional CORS headers as fallback (ensures headers are always set)
     @app.after_request

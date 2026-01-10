@@ -1,23 +1,30 @@
 """
 Purchase product routes for managing purchase products.
-All purchase product operations interact with Supabase database.
+All purchase product operations interact with MongoDB database.
 """
 from flask import Blueprint, request, jsonify
-from supabase_client import get_supabase_client
+from mongodb_client import get_collection
+from bson import ObjectId
+from datetime import datetime
+from typing import Any
 
 # Create a Blueprint for purchase product routes
 purchase_products_bp = Blueprint('purchase_products', __name__)
 
 
-def get_supabase():
-    """
-    Lazy initialization of Supabase client.
-    This function is injected into the blueprint context.
-    """
-    try:
-        return get_supabase_client()
-    except RuntimeError as e:
-        raise RuntimeError(f"Supabase configuration error: {str(e)}. Please check your .env file.")
+def convert_objectid_to_str(obj: Any) -> Any:
+    """Convert ObjectId to string recursively and add 'id' field for compatibility."""
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, dict):
+        converted = {k: convert_objectid_to_str(v) for k, v in obj.items()}
+        # Add 'id' field mapped to '_id' for frontend compatibility
+        if '_id' in converted and 'id' not in converted:
+            converted['id'] = str(converted['_id'])
+        return converted
+    elif isinstance(obj, list):
+        return [convert_objectid_to_str(item) for item in obj]
+    return obj
 
 
 @purchase_products_bp.get("/api/purchase-products")
@@ -30,19 +37,15 @@ def list_purchase_products():
         JSON array of purchase product objects
     """
     try:
-        supabase_client = get_supabase()
-        resp = supabase_client.table("purchase_products").select("*").order("created_at", desc=True).execute()
-        return jsonify(resp.data or [])
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
+        collection = get_collection("purchase_products")
+        products = list(collection.find().sort("created_at", -1))
+        
+        # Convert ObjectId to string
+        products = convert_objectid_to_str(products)
+        
+        return jsonify(products or [])
     except Exception as e:
         error_msg = str(e)
-        # Check if it's an RLS (Row Level Security) error
-        if "row-level security" in error_msg.lower() or "42501" in error_msg:
-            return jsonify({
-                "error": "Permission denied. Please ensure you're using the correct service_role key.",
-                "details": error_msg
-            }), 403
         return jsonify({"error": f"Failed to fetch purchase products: {error_msg}"}), 500
 
 
@@ -77,8 +80,10 @@ def create_purchase_product():
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
     
     try:
-        supabase_client = get_supabase()
-        record = {
+        collection = get_collection("purchase_products")
+        
+        # Prepare purchase product document
+        product_doc = {
             "user_id": data["user_id"],
             "item_no": data["item_no"],
             "item_name": data.get("item_name") or "",
@@ -89,41 +94,23 @@ def create_purchase_product():
             "unit_price": float(data.get("unit_price", 0)),
             "discount": float(data.get("discount", 0) or 0),
             "vat_percent": float(data.get("vat_percent", 0) or 0),
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
         }
-        resp = supabase_client.table("purchase_products").insert(record).execute()
         
-        if resp.data:
-            return jsonify(resp.data[0]), 201
-        # If no data returned, check if it's an error response
-        if hasattr(resp, 'error') and resp.error:
-            error_details = str(resp.error)
-            # Check if it's an RLS error in the response
-            if "row-level security" in error_details.lower() or "42501" in error_details or "permission denied" in error_details.lower():
-                return jsonify({
-                    "error": "Permission denied. Please ensure the purchase_products table exists and has proper permissions.",
-                    "details": error_details,
-                    "solution": "Run the SQL script: backend/display_file/COMPLETE_PURCHASE_PRODUCTS_SETUP.sql"
-                }), 403
-            return jsonify({"error": str(resp.error)}), 500
-        return jsonify({"error": f"Insert failed: {str(resp)}"}), 500
+        # Insert purchase product
+        result = collection.insert_one(product_doc)
         
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
+        # Fetch the created product
+        created_product = collection.find_one({"_id": result.inserted_id})
+        created_product = convert_objectid_to_str(created_product)
+        
+        return jsonify(created_product), 201
+        
     except Exception as e:
         error_msg = str(e)
-        # Check if it's an RLS (Row Level Security) error
-        if "row-level security" in error_msg.lower() or "42501" in error_msg or "permission denied" in error_msg.lower():
-            return jsonify({
-                "error": "Permission denied. Please ensure the purchase_products table exists and has proper permissions.",
-                "details": error_msg,
-                "solution": "Run the SQL script: backend/display_file/COMPLETE_PURCHASE_PRODUCTS_SETUP.sql"
-            }), 403
-        # Return detailed error for debugging
-        import traceback
         return jsonify({
-            "error": f"Failed to create purchase product: {error_msg}",
-            "details": traceback.format_exc() if hasattr(traceback, 'format_exc') else str(e),
-            "solution": "Check the error details above and ensure the purchase_products table exists"
+            "error": f"Failed to create purchase product: {error_msg}"
         }), 500
 
 
@@ -133,7 +120,7 @@ def update_purchase_product(product_id: str):
     Update an existing purchase product by ID.
     
     Args:
-        product_id: UUID of the purchase product to update
+        product_id: ID of the purchase product to update
     
     Allowed fields to update:
         - item_no, item_name, description, category
@@ -151,6 +138,9 @@ def update_purchase_product(product_id: str):
     }
     update = {k: data[k] for k in allowed if k in data}
     
+    if not update:
+        return jsonify({"error": "No valid fields to update"}), 400
+    
     # Coerce numeric fields to proper types
     for k in ("unit_price", "discount", "vat_percent"):
         if k in update and update[k] is not None:
@@ -160,23 +150,35 @@ def update_purchase_product(product_id: str):
     if "quantity" in update and update["quantity"] is not None:
         update["quantity"] = int(update["quantity"])
     
+    # Add updated_at timestamp
+    update["updated_at"] = datetime.utcnow().isoformat()
+    
     try:
-        supabase_client = get_supabase()
-        resp = supabase_client.table("purchase_products").update(update).eq("id", product_id).execute()
+        collection = get_collection("purchase_products")
         
-        if resp.data:
-            return jsonify(resp.data[0])
-        return jsonify({"error": "Update failed"}), 500
+        # Convert string ID to ObjectId
+        try:
+            obj_id = ObjectId(product_id)
+        except:
+            return jsonify({"error": "Invalid product ID format"}), 400
         
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
+        # Update purchase product
+        result = collection.update_one(
+            {"_id": obj_id},
+            {"$set": update}
+        )
+        
+        if result.matched_count == 0:
+            return jsonify({"error": "Purchase product not found"}), 404
+        
+        # Fetch updated product
+        updated_product = collection.find_one({"_id": obj_id})
+        updated_product = convert_objectid_to_str(updated_product)
+        
+        return jsonify(updated_product)
+        
     except Exception as e:
         error_msg = str(e)
-        if "row-level security" in error_msg.lower() or "42501" in error_msg:
-            return jsonify({
-                "error": "Permission denied. Please ensure you're using the correct service_role key.",
-                "details": error_msg
-            }), 403
         return jsonify({"error": f"Failed to update purchase product: {error_msg}"}), 500
 
 
@@ -186,25 +188,28 @@ def delete_purchase_product(product_id: str):
     Delete a purchase product by ID.
     
     Args:
-        product_id: UUID of the purchase product to delete
+        product_id: ID of the purchase product to delete
     
     Returns:
         Empty response with 204 status code on success
     """
     try:
-        supabase_client = get_supabase()
-        resp = supabase_client.table("purchase_products").delete().eq("id", product_id).execute()
+        collection = get_collection("purchase_products")
         
-        return ("", 204) if resp.data is not None else (jsonify({"error": "Delete failed"}), 500)
+        # Convert string ID to ObjectId
+        try:
+            obj_id = ObjectId(product_id)
+        except:
+            return jsonify({"error": "Invalid product ID format"}), 400
         
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
+        # Delete purchase product
+        result = collection.delete_one({"_id": obj_id})
+        
+        if result.deleted_count == 0:
+            return jsonify({"error": "Purchase product not found"}), 404
+        
+        return ("", 204)
+        
     except Exception as e:
         error_msg = str(e)
-        if "row-level security" in error_msg.lower() or "42501" in error_msg:
-            return jsonify({
-                "error": "Permission denied. Please ensure you're using the correct service_role key.",
-                "details": error_msg
-            }), 403
         return jsonify({"error": f"Failed to delete purchase product: {error_msg}"}), 500
-

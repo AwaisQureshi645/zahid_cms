@@ -29,7 +29,7 @@ import {
   ChartLegendContent,
 } from '@/components/ui/chart';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { apiGet } from '@/lib/api';
 import DashboardLayout from '@/components/DashboardLayout';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 
@@ -136,29 +136,23 @@ export default function Reports() {
       const startISO = start.toISOString();
       const endISO = end.toISOString();
 
-      // Fetch invoices
-      let invoicesQuery = supabase
-        .from('invoices')
-        .select('*')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO);
-
-      // Fetch products from inventory
-      let productsQuery = supabase
-        .from('products')
-        .select('*');
-
-      if (selectedCategory !== 'all') {
-        productsQuery = productsQuery.eq('category', selectedCategory);
-      }
-
+      // Fetch invoices and products from API
       const [invoicesRes, productsRes] = await Promise.all([
-        invoicesQuery.order('created_at', { ascending: true }),
-        productsQuery.order('created_at', { ascending: false }),
+        apiGet<any[]>('/api/invoices'),
+        apiGet<any[]>('/api/products'),
       ]);
 
-      const fetchedInvoices = invoicesRes.data || [];
-      const fetchedProducts = productsRes.data || [];
+      // Filter invoices by date range
+      const fetchedInvoices = (invoicesRes || []).filter((inv: any) => {
+        const invDate = new Date(inv.created_at);
+        return invDate >= start && invDate <= end;
+      });
+
+      // Filter products by category if needed
+      let fetchedProducts = productsRes || [];
+      if (selectedCategory !== 'all') {
+        fetchedProducts = fetchedProducts.filter((p: any) => p.category === selectedCategory);
+      }
 
       setInvoices(fetchedInvoices);
       setProducts(fetchedProducts);
