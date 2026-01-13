@@ -91,6 +91,7 @@ export default function CreateInvoice() {
   const [receiverName, setReceiverName] = useState('');
   const [cashierName, setCashierName] = useState('');
   const [isQuotation, setIsQuotation] = useState(false);
+  const [cashWithoutTax, setCashWithoutTax] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -375,13 +376,25 @@ export default function CreateInvoice() {
   };
 
   const calculateTotals = () => {
-    const subtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0);
-    const discount = 0;
-    const beforeVat = subtotal - discount;
-    const vatAmount = invoiceItems.reduce((sum, item) => sum + item.vat_value, 0);
-    const total = invoiceItems.reduce((sum, item) => sum + item.amount, 0);
-    
-    return { subtotal, discount, beforeVat, vatAmount, total };
+    if (cashWithoutTax) {
+      // When cashWithoutTax is checked, use unit_price * quantity (no VAT)
+      const subtotal = invoiceItems.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
+      const discount = 0;
+      const beforeVat = subtotal - discount;
+      const vatAmount = 0; // No VAT when cashWithoutTax is checked
+      const total = subtotal; // Total is just unit_price * quantity
+      
+      return { subtotal, discount, beforeVat, vatAmount, total };
+    } else {
+      // Normal calculation with VAT
+      const subtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0);
+      const discount = 0;
+      const beforeVat = subtotal - discount;
+      const vatAmount = invoiceItems.reduce((sum, item) => sum + item.vat_value, 0);
+      const total = invoiceItems.reduce((sum, item) => sum + item.amount, 0);
+      
+      return { subtotal, discount, beforeVat, vatAmount, total };
+    }
   };
 
   const generateInvoiceNumber = () => {
@@ -1235,6 +1248,22 @@ export default function CreateInvoice() {
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                     >
                       Enable Quotation
+                    </label>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Cash Without Tax</Label>
+                  <div className="flex items-center gap-2 pt-2">
+                    <Checkbox
+                      id="cash-without-tax-checkbox-create"
+                      checked={cashWithoutTax}
+                      onCheckedChange={(checked) => setCashWithoutTax(checked === true)}
+                    />
+                    <label
+                      htmlFor="cash-without-tax-checkbox-create"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                    >
+                      Cash Without Tax
                     </label>
                   </div>
                 </div>

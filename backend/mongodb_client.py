@@ -74,47 +74,72 @@ def get_mongodb_client() -> MongoClient:
             raise RuntimeError("MONGODB_URI is not set in environment. Please set it in your .env file.")
         
         try:
-            # Parse and encode the MongoDB URI to handle special characters in username/password
+            # Parse the MongoDB URI
             parsed = urlparse(mongodb_uri)
             
-            # Extract username and password from netloc
+            # Check if credentials are already URL-encoded in the connection string
+            # If the password contains % (URL encoding), use the URI as-is to avoid double-encoding
             if "@" in parsed.netloc:
                 auth_part, host_part = parsed.netloc.rsplit("@", 1)
                 if ":" in auth_part:
                     username, password = auth_part.split(":", 1)
-                    # URL-encode username and password according to RFC 3986
-                    encoded_username = quote_plus(username)
-                    encoded_password = quote_plus(password)
-                    # Reconstruct netloc with encoded credentials
-                    encoded_netloc = f"{encoded_username}:{encoded_password}@{host_part}"
+                    # Check if password is already URL-encoded (contains %)
+                    if "%" in password:
+                        # Password is already encoded, use connection string as-is
+                        encoded_uri = mongodb_uri
+                    else:
+                        # Password is not encoded, encode it now
+                        from urllib.parse import unquote_plus
+                        # Decode first in case of partial encoding, then re-encode properly
+                        decoded_username = unquote_plus(username)
+                        decoded_password = unquote_plus(password)
+                        encoded_username = quote_plus(decoded_username)
+                        encoded_password = quote_plus(decoded_password)
+                        encoded_netloc = f"{encoded_username}:{encoded_password}@{host_part}"
+                        encoded_uri = urlunparse((
+                            parsed.scheme,
+                            encoded_netloc,
+                            parsed.path,
+                            parsed.params,
+                            parsed.query,
+                            parsed.fragment
+                        ))
                 else:
-                    encoded_netloc = parsed.netloc
+                    # No password, use as-is
+                    encoded_uri = mongodb_uri
             else:
-                encoded_netloc = parsed.netloc
+                # No credentials, use as-is
+                encoded_uri = mongodb_uri
             
-            # Reconstruct the URI with encoded credentials
-            encoded_uri = urlunparse((
-                parsed.scheme,
-                encoded_netloc,
-                parsed.path,
-                parsed.params,
-                parsed.query,
-                parsed.fragment
-            ))
+            # Base client options
+            client_options = {
+                "serverSelectionTimeoutMS": 20000,
+                "connectTimeoutMS": 20000,
+                "socketTimeoutMS": 30000,
+                "maxPoolSize": 10,
+                "minPoolSize": 1,
+                "maxIdleTimeMS": 45000,
+                "retryWrites": True,
+                "retryReads": True,
+            }
             
-            # Create MongoDB client with encoded URI and connection pool settings
-            # These settings help prevent thread creation issues
-            client = MongoClient(
-                encoded_uri,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
-                socketTimeoutMS=30000,
-                maxPoolSize=10,
-                minPoolSize=1,
-                maxIdleTimeMS=45000,
-                retryWrites=True,
-                retryReads=True
-            )
+            # Add SSL/TLS configuration for MongoDB Atlas using certifi
+            if "mongodb.net" in encoded_uri or parsed.scheme == "mongodb+srv":
+                try:
+                    import certifi
+                    client_options.update({
+                        "tls": True,
+                        "tlsCAFile": certifi.where(),
+                    })
+                except ImportError:
+                    # If certifi is not installed, fall back to allowing invalid certificates
+                    client_options.update({
+                        "tls": True,
+                        "tlsAllowInvalidCertificates": True,
+                    })
+            
+            # Create MongoDB client with configured options
+            client = MongoClient(encoded_uri, **client_options)
             
             # Test the connection (with timeout to prevent hanging)
             try:

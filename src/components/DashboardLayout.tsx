@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, FileText, BarChart3, Settings, LogOut, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Package, FileText, BarChart3, Settings, LogOut, Menu, X, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
@@ -53,6 +53,7 @@ export default function DashboardLayout({ title, children }: DashboardLayoutProp
     { label: 'Inventory', icon: Package, to: '/dashboard/inventory' },
     { label: 'Purchases', icon: Package, to: '/dashboard/purchases' },
     { label: 'Reports', icon: BarChart3, to: '/dashboard/reports' },
+    { label: 'Case Without TAX', icon: Receipt, to: '/dashboard/case-without-tax' },
     { label: 'Settings', icon: Settings, to: '/dashboard/settings' },
   ];
 

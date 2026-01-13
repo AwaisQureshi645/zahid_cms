@@ -13,6 +13,7 @@ import Purchases from "./pages/Purchases";
 import CreateInvoice from "./pages/CreateInvoice";
 import Invoices from "./pages/Invoices";
 import Reports from "./pages/Reports";
+import CaseWithoutTax from "./pages/CaseWithoutTax";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -73,6 +74,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Reports />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/dashboard/case-without-tax" 
+              element={
+                <ProtectedRoute>
+                  <CaseWithoutTax />
                 </ProtectedRoute>
               } 
             />
